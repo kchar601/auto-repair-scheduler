@@ -1,0 +1,248 @@
+.users-page {
+  width: min(100%, 840px);
+  margin: 0 auto;
+  padding: 1.5rem 1rem;
+  text-align: left;
+}
+
+.users-page h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.calendar-subtitle {
+  margin: 0.5rem 0 1rem;
+}
+
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.legend-item {
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.legend-high {
+  background: #86efac;
+  color: #14532d;
+}
+
+.legend-medium {
+  background: #fde68a;
+  color: #78350f;
+}
+
+.legend-low {
+  background: #fca5a5;
+  color: #7f1d1d;
+}
+
+.calendar-status {
+  min-height: 1.25rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+}
+
+.calendar-loading {
+  color: #4b5563;
+}
+
+.calendar-error {
+  color: #b91c1c;
+}
+
+.availability-calendar {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  padding: 0.5rem;
+  background: #ffffff;
+}
+
+.availability-calendar .react-calendar__navigation button {
+  border-radius: 8px;
+}
+
+.availability-calendar .react-calendar__tile {
+  position: relative;
+  min-height: 76px;
+  border-radius: 10px;
+}
+
+.availability-calendar .react-calendar__tile abbr {
+  font-weight: 700;
+}
+
+.calendar-openings {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.availability-calendar .calendar-tile--past {
+  background: #e5e7eb !important;
+  color: #9ca3af !important;
+}
+
+.availability-calendar .calendar-tile--availability-unknown {
+  background: #f3f4f6 !important;
+  color: #111827;
+}
+
+.availability-calendar .calendar-tile--availability-0 {
+  background: #fecaca !important;
+  color: #111827;
+}
+
+.availability-calendar .calendar-tile--availability-1 {
+  background: #fca5a5 !important;
+  color: #111827;
+}
+
+.availability-calendar .calendar-tile--availability-2 {
+  background: #fde68a !important;
+  color: #111827;
+}
+
+.availability-calendar .calendar-tile--availability-3 {
+  background: #bef264 !important;
+  color: #111827;
+}
+
+.availability-calendar .calendar-tile--availability-4 {
+  background: #86efac !important;
+  color: #111827;
+}
+
+.availability-calendar .react-calendar__tile:enabled:hover {
+  filter: saturate(2);
+}
+
+.availability-calendar .react-calendar__tile--active {
+  box-shadow: inset 0 0 0 2px #111827;
+  background: #6088dd !important;
+}
+
+.availability-calendar .react-calendar__tile--now {
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.selected-day-summary {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.selected-day-summary h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.selected-day-summary p {
+  margin: 0.2rem 0;
+  color: #374151;
+}
+
+.selected-day-appointments {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.selected-day-appointments h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.day-details-status {
+  margin: 0.8rem 0 0;
+  font-size: 0.92rem;
+}
+
+.day-details-loading {
+  color: #4b5563;
+}
+
+.day-details-error {
+  color: #b91c1c;
+}
+
+.day-details-empty {
+  color: #374151;
+}
+
+.appointment-list {
+  list-style: none;
+  margin: 0.8rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.appointment-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  background: #f9fafb;
+}
+
+.appointment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.35rem;
+}
+
+.appointment-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #111827;
+}
+
+.appointment-kind {
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.appointment-kind--dropoff {
+  background: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.appointment-kind--wait {
+  background: #fde68a;
+  color: #78350f;
+}
+
+.appointment-kind--due_by {
+  background: #ddd6fe;
+  color: #5b21b6;
+}
+
+.appointment-item p {
+  margin: 0.15rem 0;
+  color: #374151;
+}
+
+.appointment-item strong {
+  color: #111827;
+}
