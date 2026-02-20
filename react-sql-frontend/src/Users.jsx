@@ -17,10 +17,16 @@ function normalizeDate(date) {
   return copy;
 }
 
-function getAvailabilityBucket(day) {
+function getAvailabilityBucket(day, mode = "slots") {
   if (!day) return "unknown";
-  const capacity = Number(day.capacitySlots || 0);
-  const remaining = Math.max(0, Number(day.remainingSlots || 0));
+  const capacity =
+    mode === "wait"
+      ? Number(day.waitLimit || 0)
+      : Number(day.capacitySlots || 0);
+  const remaining =
+    mode === "wait"
+      ? Math.max(0, Number(day.waitRemaining || 0))
+      : Math.max(0, Number(day.remainingSlots || 0));
 
   if (capacity <= 0) return "0";
 
@@ -56,6 +62,7 @@ const Users = () => {
   const [dayDetails, setDayDetails] = useState(null);
   const [isDayLoading, setIsDayLoading] = useState(false);
   const [dayError, setDayError] = useState("");
+  const [availabilityMode, setAvailabilityMode] = useState("slots");
 
   const today = useMemo(() => normalizeDate(new Date()), []);
 
@@ -155,6 +162,9 @@ const Users = () => {
   const selectedCapacity = Number(selectedDayData?.capacitySlots || 0);
   const selectedUsed = Number(selectedDayData?.usedSlots || 0);
   const selectedAppointments = dayDetails?.appointments || [];
+  const selectedWaitLimit = selectedDayData?.waitLimit || 0;
+  const selectedWaitUsed = selectedDayData?.waitUsed || 0;
+  const isWaitMode = availabilityMode === "wait";
 
   return (
     <div className="users-page">
@@ -179,115 +189,183 @@ const Users = () => {
             {isLoading ? "Loading availability..." : " "}
           </p>
         )}
-      </div>
 
-      <Calendar
-        className="availability-calendar"
-        value={selectedDate}
-        onChange={(value) => {
-          const nextDate = Array.isArray(value) ? value[0] : value;
-          if (nextDate) setSelectedDate(normalizeDate(nextDate));
-        }}
-        onActiveStartDateChange={({ activeStartDate: nextStartDate, view }) => {
-          if (view === "month" && nextStartDate) {
-            setActiveStartDate(normalizeDate(nextStartDate));
+        <div className="availability-mode-toggle" role="radiogroup">
+          <label
+            className={`availability-mode-option ${
+              !isWaitMode ? "availability-mode-option--active" : ""
+            }`}
+          >
+            <input
+              type="radio"
+              name="availabilityMode"
+              checked={!isWaitMode}
+              onChange={() => setAvailabilityMode("slots")}
+            />
+            Total slots
+          </label>
+          <label
+            className={`availability-mode-option ${
+              isWaitMode ? "availability-mode-option--active" : ""
+            }`}
+          >
+            <input
+              type="radio"
+              name="availabilityMode"
+              checked={isWaitMode}
+              onChange={() => setAvailabilityMode("wait")}
+            />
+            Waiters
+          </label>
+        </div>
+        <p className="availability-mode-caption">
+          Showing{" "}
+          {isWaitMode
+            ? "wait/due-by spots remaining on each day."
+            : "total appointment slots remaining on each day."}
+        </p>
+
+        <Calendar
+          className="availability-calendar"
+          value={selectedDate}
+          onChange={(value) => {
+            const nextDate = Array.isArray(value) ? value[0] : value;
+            if (nextDate) setSelectedDate(normalizeDate(nextDate));
+          }}
+          onActiveStartDateChange={({
+            activeStartDate: nextStartDate,
+            view,
+          }) => {
+            if (view === "month" && nextStartDate) {
+              setActiveStartDate(normalizeDate(nextStartDate));
+            }
+          }}
+          tileDisabled={({ date, view }) =>
+            view === "month" && isNonWorkingDay(date)
           }
-        }}
-        tileDisabled={({ date, view }) =>
-          view === "month" && isNonWorkingDay(date)
-        }
-        tileClassName={({ date, view }) => {
-          if (view !== "month") return null;
-          if (isNonWorkingDay(date)) return "calendar-tile calendar-tile--past";
+          tileClassName={({ date, view }) => {
+            if (view !== "month") return null;
+            if (isNonWorkingDay(date))
+              return "calendar-tile calendar-tile--past";
 
-          const day = availabilityByDate[toDateKey(date)];
-          const bucket = getAvailabilityBucket(day);
-          return `calendar-tile calendar-tile--availability-${bucket}`;
-        }}
-        tileContent={({ date, view }) => {
-          if (view !== "month" || isNonWorkingDay(date)) return null;
-          const day = availabilityByDate[toDateKey(date)];
-          if (!day) return null;
+            const day = availabilityByDate[toDateKey(date)];
+            const bucket = getAvailabilityBucket(
+              day,
+              isWaitMode ? "wait" : "slots",
+            );
+            return `calendar-tile calendar-tile--availability-${bucket}`;
+          }}
+          tileContent={({ date, view }) => {
+            if (view !== "month" || isNonWorkingDay(date)) return null;
+            const day = availabilityByDate[toDateKey(date)];
+            if (!day) return null;
 
-          const remaining = Math.max(0, Number(day.remainingSlots || 0));
-          return <span className="calendar-openings">{remaining} open</span>;
-        }}
-      />
-
-      {selectedDayData && !isNonWorkingDay(selectedDate) ? (
-        <div className="selected-day-summary">
-          <h2>{selectedDate.toLocaleDateString()}</h2>
-          <p>{selectedRemaining} appointment slot(s) available</p>
-          <p>
-            {selectedUsed} used / {selectedCapacity} total capacity
-          </p>
-        </div>
-      ) : null}
-
-      {!isNonWorkingDay(selectedDate) ? (
-        <div className="selected-day-appointments">
-          <h3>Appointments for {selectedDate.toLocaleDateString()}</h3>
-
-          {dayError ? (
-            <p className="day-details-status day-details-error">{dayError}</p>
-          ) : isDayLoading ? (
-            <p className="day-details-status day-details-loading">
-              Loading appointments...
-            </p>
-          ) : selectedAppointments.length === 0 ? (
-            <p className="day-details-status day-details-empty">
-              No appointments scheduled for this day.
-            </p>
-          ) : (
-            <ul className="appointment-list">
-              {selectedAppointments.map((appointment) => {
-                const kind = appointment.kind || "DROPOFF";
-                const isFirstJob = Number(appointment.isFirstJob) === 1;
-                const isCapacityOverride =
-                  Number(appointment.isCapacityOverride) === 1;
-                const isWaitOverride =
-                  Number(appointment.isWaitLimitOverride) === 1;
-
-                return (
-                  <li key={appointment.id} className="appointment-item">
-                    <div className="appointment-header">
-                      <h4>{appointment.lname || "No Name"}</h4>
-                      <span
-                        className={`appointment-kind appointment-kind--${String(
-                          kind,
-                        ).toLowerCase()}`}
-                      >
-                        {kind}
-                      </span>
-                    </div>
-
-                    <p>
-                      <strong>Vehicle:</strong> {appointment.vehicle || "N/A"}
-                    </p>
-                    <p>
-                      <strong>Phone:</strong> {appointment.phone || "N/A"}
-                    </p>
-                    <p>
-                      <strong>Services:</strong> {appointment.services || "N/A"}
-                    </p>
-                    <p>
-                      <strong>Time:</strong>{" "}
-                      {formatPriorityTime(appointment.priorityTime)}
-                    </p>
-                    <p>
-                      <strong>Slots:</strong>{" "}
-                      {Math.max(0, Number(appointment.slotsRequired || 0))}
-                      {isFirstJob ? " | First job" : ""}
-                      {isCapacityOverride ? " | Capacity override" : ""}
-                      {isWaitOverride ? " | Wait override" : ""}
-                    </p>
-                  </li>
-                );
+            const remaining = isWaitMode
+              ? Math.max(0, Number(day.waitRemaining || 0))
+              : Math.max(0, Number(day.remainingSlots || 0));
+            return (
+              <span className="calendar-openings">
+                {remaining} {isWaitMode ? "wait open" : "open"}
+              </span>
+            );
+          }}
+        />
+      </div>
+      <div>
+        {selectedDayData && !isNonWorkingDay(selectedDate) ? (
+          <div className="selected-day-summary">
+            <h2>
+              {selectedDate.toLocaleDateString(undefined, {
+                weekday: "long",
+                year: "numeric",
+                month: "numeric",
+                day: "numeric",
               })}
-            </ul>
-          )}
-        </div>
-      ) : null}
+            </h2>
+            <p>{selectedRemaining} appointment slot(s) available</p>
+            <p>
+              {selectedUsed} used / {selectedCapacity} total capacity
+            </p>
+            <p>
+              {selectedWaitUsed} used / {selectedWaitLimit} wait/due-by allowed
+            </p>
+          </div>
+        ) : null}
+
+        {!isNonWorkingDay(selectedDate) ? (
+          <div className="selected-day-appointments">
+            <h3>Appointments for {selectedDate.toLocaleDateString()}</h3>
+
+            {dayError ? (
+              <p className="day-details-status day-details-error">{dayError}</p>
+            ) : isDayLoading ? (
+              <p className="day-details-status day-details-loading">
+                Loading appointments...
+              </p>
+            ) : selectedAppointments.length === 0 ? (
+              <p className="day-details-status day-details-empty">
+                No appointments scheduled for this day.
+              </p>
+            ) : (
+              <ul className="appointment-list">
+                {selectedAppointments.map((appointment) => {
+                  const kind = appointment.kind || "DROPOFF";
+                  const isFirstJob = Number(appointment.isFirstJob) === 1;
+                  const isCapacityOverride =
+                    Number(appointment.isCapacityOverride) === 1;
+                  const isWaitOverride =
+                    Number(appointment.isWaitLimitOverride) === 1;
+
+                  return (
+                    <li key={appointment.id} className="appointment-item">
+                      <div className="appointment-header">
+                        <h4>{appointment.lname || "No Name"}</h4>
+                        <span
+                          className={`appointment-kind appointment-kind--${String(
+                            kind,
+                          ).toLowerCase()}`}
+                        >
+                          {kind}{" "}
+                          {formatPriorityTime(appointment.priorityTime) ===
+                          "N/A" ? (
+                            ""
+                          ) : (
+                            <>
+                              @ {formatPriorityTime(appointment.priorityTime)}
+                            </>
+                          )}
+                        </span>
+                      </div>
+
+                      <p>
+                        <strong>Vehicle:</strong> {appointment.vehicle || "N/A"}
+                      </p>
+                      <p>
+                        <strong>Phone:</strong> {appointment.phone || "N/A"}
+                      </p>
+                      <p>
+                        <strong>Services:</strong>{" "}
+                        {appointment.services || "N/A"}
+                      </p>
+                      {appointment.slotsRequired === 1 ? (
+                        ""
+                      ) : (
+                        <p>
+                          <strong>Slots:</strong>{" "}
+                          {Math.max(0, Number(appointment.slotsRequired || 0))}
+                          {isFirstJob ? " | First job" : ""}
+                          {isCapacityOverride ? " | Capacity override" : ""}
+                          {isWaitOverride ? " | Wait override" : ""}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 };

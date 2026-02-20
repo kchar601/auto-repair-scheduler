@@ -4,7 +4,7 @@
   padding: 1.5rem 1rem;
   text-align: left;
   display: grid;
-  grid-template-columns: 400px 1000px;
+  grid-template-columns: 600px 800px;
   gap: 1rem;
 }
 
@@ -20,6 +20,43 @@
 
 .calendar-subtitle {
   margin: 0.5rem 0 1rem;
+}
+
+.availability-mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.availability-mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1f2937;
+  background: #ffffff;
+  cursor: pointer;
+}
+
+.availability-mode-option input {
+  margin: 0;
+}
+
+.availability-mode-option--active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1e3a8a;
+}
+
+.availability-mode-caption {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  color: #4b5563;
 }
 
 .calendar-legend {
@@ -209,6 +246,7 @@
 }
 
 .appointment-item {
+  position: relative;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 0.65rem 0.75rem;
@@ -230,7 +268,11 @@
 }
 
 .appointment-kind {
-  border-radius: 999px;
+  position: absolute;
+  display: flex;
+  top: 8px;
+  right: 8px;
+  border-radius: 1rem;
   padding: 0.15rem 0.55rem;
   font-size: 0.72rem;
   font-weight: 700;
@@ -259,4 +301,8 @@
 
 .appointment-item strong {
   color: #111827;
+}
+
+.react-calendar__month-view__weekdays__weekday {
+  color: black;
 }

@@ -279,8 +279,8 @@ async function getDaySummary(dateStr, conn) {
     SELECT
       COALESCE(SUM(CASE WHEN isCapacityOverride = 0 THEN slotsRequired ELSE 0 END), 0) AS usedSlots,
       COALESCE(SUM(CASE WHEN isCapacityOverride = 1 THEN slotsRequired ELSE 0 END), 0) AS overbookedSlots,
-      COALESCE(SUM(CASE WHEN kind = 'WAIT' AND isWaitLimitOverride = 0 THEN 1 ELSE 0 END), 0) AS waitUsed,
-      COALESCE(SUM(CASE WHEN kind = 'WAIT' AND isWaitLimitOverride = 1 THEN 1 ELSE 0 END), 0) AS waitOverrides
+      COALESCE(SUM(CASE WHEN kind IN ('WAIT', 'DUE_BY') AND isWaitLimitOverride = 0 THEN 1 ELSE 0 END), 0) AS waitUsed,
+      COALESCE(SUM(CASE WHEN kind IN ('WAIT', 'DUE_BY') AND isWaitLimitOverride = 1 THEN 1 ELSE 0 END), 0) AS waitOverrides
     FROM appointments
     WHERE scheduledDate = ?
     `,
@@ -474,12 +474,12 @@ app.post("/appointments", async (req, res) => {
     }
 
     // Wait limit rule
-    if (payload.kind === "WAIT" && !payload.isWaitLimitOverride) {
+    if (["WAIT", "DUE_BY"].includes(payload.kind) && !payload.isWaitLimitOverride) {
       if (summary.waitUsed + 1 > summary.waitLimit) {
         await conn.rollback();
         return res.status(409).json({
           error: "WAIT_LIMIT_REACHED",
-          message: "Wait appointments are full for that day.",
+          message: "Wait/Due-by appointments are full for that day.",
           date: payload.scheduledDate,
           waitLimit: summary.waitLimit,
           waitUsed: summary.waitUsed,
@@ -630,7 +630,7 @@ app.put("/appointments/:id", async (req, res) => {
         SELECT
           COALESCE(SUM(CASE WHEN isCapacityOverride = 0 THEN slotsRequired ELSE 0 END), 0) AS usedSlots,
           COALESCE(SUM(CASE WHEN isCapacityOverride = 1 THEN slotsRequired ELSE 0 END), 0) AS overbookedSlots,
-          COALESCE(SUM(CASE WHEN kind = 'WAIT' AND isWaitLimitOverride = 0 THEN 1 ELSE 0 END), 0) AS waitUsed
+          COALESCE(SUM(CASE WHEN kind IN ('WAIT', 'DUE_BY') AND isWaitLimitOverride = 0 THEN 1 ELSE 0 END), 0) AS waitUsed
         FROM appointments
         WHERE scheduledDate = ? AND id <> ?
         `,
@@ -675,12 +675,12 @@ app.put("/appointments/:id", async (req, res) => {
     }
 
     // Wait rule on new date
-    if (updated.kind === "WAIT" && !updated.isWaitLimitOverride) {
+    if (["WAIT", "DUE_BY"].includes(updated.kind) && !updated.isWaitLimitOverride) {
       if (summaryNewDate.waitUsed + 1 > summaryNewDate.waitLimit) {
         await conn.rollback();
         return res.status(409).json({
           error: "WAIT_LIMIT_REACHED",
-          message: "Wait appointments are full for that day.",
+          message: "Wait/Due-by appointments are full for that day.",
           date: newDate,
           waitLimit: summaryNewDate.waitLimit,
           waitUsed: summaryNewDate.waitUsed,
