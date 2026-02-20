@@ -1,42 +1,135 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground: #f6f5ef;
+    --background: hsl(0, 0%, 7%);
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
+    --primary-foreground: #c5c4c3;
+    --primary-background: hsl(0, 0%, 15%);
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+    --secondary-foreground: #b4b4b1;
+    --secondary-background: hsl(0, 0%, 23%);
+
+    --accent-foreground: #fd3535;
+    --accent-background: #970202;
+
+    --surface-1: #1b1a18;
+    --surface-2: #2a2926;
+    --surface-3: #33312f;
+    --border: #4e4e4b;
+    --border-muted: #3f3f3d;
+    --muted: #b4b4b1;
+    --muted-2: #cdcdcb;
+    --focus-ring: #b6b3af;
+    --calendar-active-bg: #193e8d;
+    --calendar-now-ring: #b6b3af;
+    --calendar-openings: #f6f5ef;
+    --calendar-past-bg: #3a3934;
+    --calendar-past-fg: #7a7972;
+    --calendar-unknown-bg: #2a2926;
+    --calendar-availability-0: #b40000;
+    --calendar-availability-1: #c44e00;
+    --calendar-availability-2: #8f7612;
+    --calendar-availability-3: #6b8012;
+    --calendar-availability-4: #2d7a00;
+    --tag-dropoff-bg: var(--primary-background);
+    --tag-dropoff-fg: var(--primary-foreground);
+    --tag-wait-bg: var(--calendar-availability-2);
+    --tag-wait-fg: var(--foreground);
+    --tag-due-bg: var(--calendar-availability-1);
+    --tag-due-fg: var(--foreground);
+
+    color: var(--foreground);
+    background-color: var(--background);
   }
-  to {
-    transform: rotate(360deg);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #c0c0c0;
+    --foreground: #121212;
+
+    --primary-background: hsl(0, 0%, 82%);
+    --primary-foreground: hsl(0, 0%, 15%);
+
+    --secondary-background: hsl(0, 100%, 95%);
+    --secondary-foreground: hsl(0, 0%, 23%);
+
+    --accent-background: #fd3535;
+    --accent-foreground: #970202;
+
+    --border: #b3b0a2;
+    --border-muted: #d8d6cb;
+    --muted: #625e37;
+    --muted-2: #413e25;
+    --focus-ring: #504d49;
+    --calendar-active-bg: #6088dd;
+    --calendar-now-ring: #504d49;
+    --calendar-openings: #0f0f0a;
+    --calendar-past-bg: #e2e1d8;
+    --calendar-past-fg: #8f8d7c;
+    --calendar-unknown-bg: #ecebe1;
+    --calendar-availability-0: #ff5151;
+    --calendar-availability-1: #ff944d;
+    --calendar-availability-2: #ffdf61;
+    --calendar-availability-3: #d2f04f;
+    --calendar-availability-4: #74fa27;
+    --tag-dropoff-bg: var(--primary-background);
+    --tag-dropoff-fg: var(--primary-foreground);
+    --tag-wait-bg: var(--calendar-availability-2);
+    --tag-wait-fg: var(--foreground);
+    --tag-due-bg: var(--calendar-availability-1);
+    --tag-due-fg: var(--foreground);
+
+    color: var(--foreground);
+    background-color: var(--background);
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+:root {
+  font-family: "Poppins", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 400;
+  font-size: 100%;
 }
 
-.card {
-  padding: 2em;
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-family: "Rambla", "Trebuchet MS", "Segoe UI", Arial, sans-serif;
+  font-weight: 700;
 }
 
-.read-the-docs {
-  color: #888;
+h1 {
+  font-size: 3.2rem;
+}
+
+h2 {
+  font-size: 3.158rem;
+}
+
+h3 {
+  font-size: 2.369rem;
+}
+
+h4 {
+  font-size: 1.777rem;
+}
+
+h5 {
+  font-size: 1.333rem;
+}
+
+small {
+  font-size: 0.75rem;
+}
+
+button {
+  font-size: 100%;
+}
+
+strong,
+th {
+  font-weight: 600;
+  letter-spacing: 1.2px;
 }
