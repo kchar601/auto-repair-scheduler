@@ -1,8 +1,16 @@
 .users-page {
-  width: min(100%, 840px);
+  width: 100%;
   margin: 0 auto;
   padding: 1.5rem 1rem;
   text-align: left;
+  display: grid;
+  grid-template-columns: 400px 1000px;
+  gap: 1rem;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
 }
 
 .users-page h1 {
@@ -66,13 +74,19 @@
 }
 
 .availability-calendar .react-calendar__navigation button {
+  color: black;
   border-radius: 8px;
+}
+
+.availability-calendar .react-calendar__navigation button:hover {
+  background-color: #d1d7df;
 }
 
 .availability-calendar .react-calendar__tile {
   position: relative;
   min-height: 76px;
   border-radius: 10px;
+  max-width: 160px;
 }
 
 .availability-calendar .react-calendar__tile abbr {

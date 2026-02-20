@@ -19,20 +19,30 @@
 const express = require("express");
 const mysql = require("mysql2");
 const cors = require("cors");
+const path = require("path");
+const dotenv = require("dotenv");
 
+// Always load backend .env regardless of the current working directory.
+dotenv.config({ path: path.resolve(__dirname, ".env") });
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+const dbPass = process.env.MYSQLPASS ?? process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD;
+
+if (!dbPass) {
+  console.error("Missing MySQL password. Set MYSQLPASS in react-sql-backend/.env.");
+  process.exit(1);
+}
 // -----------------------
 // MySQL Connection (promise)
 // -----------------------
 const db = mysql
   .createConnection({
-    host: "localhost",
-    user: "root",
-    password: "Gasman19!", // TODO: move to env var
-    database: "schedule",
+    host: process.env.MYSQLHOST || "localhost",
+    user: process.env.MYSQLUSER || "root",
+    password: dbPass,
+    database: process.env.MYSQLDATABASE || "schedule",
   })
   .promise();
 
@@ -53,6 +63,10 @@ function isValidDateString(s) {
   return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
 }
 
+function isSunday(dateStr) {
+  return new Date(`${dateStr}T00:00:00`).getDay() === 0;
+}
+
 function baseCapacityByMechanics(n) {
   if (n >= 3) return 16;
   if (n === 2) return 10;
@@ -61,8 +75,9 @@ function baseCapacityByMechanics(n) {
 }
 
 function getWaitLimit(dateStr) {
-  // Saturday=6 in JS Date.getDay() (0=Sun)
+  // Sunday=0, Saturday=6 in JS Date.getDay()
   const d = new Date(dateStr + "T00:00:00");
+  if (d.getDay() === 0) return 0;
   return d.getDay() === 6 ? 2 : 3;
 }
 
@@ -207,6 +222,17 @@ function validateAppointmentPayload(body, { partial = false } = {}) {
 
 // Capacity calculation for a date
 async function getCapacityMeta(dateStr, conn /* db or connection */) {
+  if (isSunday(dateStr)) {
+    return {
+      totalMechanics: 0,
+      fullOffCount: 0,
+      workingMechanics: 0,
+      baseCapacity: 0,
+      partialJobsDropped: 0,
+      capacitySlots: 0,
+    };
+  }
+
   const [[counts]] = await conn.query(
     `
     SELECT
@@ -412,6 +438,14 @@ app.post("/appointments", async (req, res) => {
     isWaitLimitOverride: Boolean(req.body.isWaitLimitOverride),
   };
 
+  if (isSunday(payload.scheduledDate)) {
+    return res.status(409).json({
+      error: "SHOP_CLOSED",
+      message: "No appointments can be scheduled on Sundays.",
+      date: payload.scheduledDate,
+    });
+  }
+
   const conn = await db.getConnection();
 
   try {
@@ -561,6 +595,15 @@ app.put("/appointments/:id", async (req, res) => {
       return res
         .status(400)
         .json({ error: "VALIDATION_ERROR", details: mergedErrors });
+    }
+
+    if (isSunday(updated.scheduledDate)) {
+      await conn.rollback();
+      return res.status(409).json({
+        error: "SHOP_CLOSED",
+        message: "No appointments can be scheduled on Sundays.",
+        date: updated.scheduledDate,
+      });
     }
 
     // Lock affected schedule days (old and new if moved)
@@ -743,3 +786,4 @@ const PORT = 3001;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+

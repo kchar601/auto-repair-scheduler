@@ -61,6 +61,9 @@ const Users = () => {
 
   const isPastDay = (date) => normalizeDate(date) < today;
 
+  const isSunday = (date) => normalizeDate(date).getDay() === 0;
+  const isNonWorkingDay = (date) => isPastDay(date) || isSunday(date);
+
   useEffect(() => {
     const loadMonthAvailability = async () => {
       setIsLoading(true);
@@ -98,7 +101,11 @@ const Users = () => {
     let cancelled = false;
 
     const loadDayDetails = async () => {
-      if (normalizeDate(selectedDate) < today) {
+      const normalizedSelectedDate = normalizeDate(selectedDate);
+      if (
+        normalizedSelectedDate < today ||
+        normalizedSelectedDate.getDay() === 0
+      ) {
         setDayDetails(null);
         setDayError("");
         setIsDayLoading(false);
@@ -118,7 +125,10 @@ const Users = () => {
           setDayDetails(response.data || null);
         }
       } catch (loadError) {
-        console.error("There was an error fetching day appointment details!", loadError);
+        console.error(
+          "There was an error fetching day appointment details!",
+          loadError,
+        );
 
         if (!cancelled) {
           setDayDetails(null);
@@ -148,26 +158,28 @@ const Users = () => {
 
   return (
     <div className="users-page">
-      <h1>Appointment Availability Calendar</h1>
-      <p className="calendar-subtitle">
-        Past days are disabled. Future availability shifts from green (more open
-        slots) to red (fewer open slots). Click any available day to see its
-        appointments.
-      </p>
-
-      <div className="calendar-legend">
-        <span className="legend-item legend-high">High availability</span>
-        <span className="legend-item legend-medium">Medium</span>
-        <span className="legend-item legend-low">Low / Full</span>
-      </div>
-
-      {error ? (
-        <p className="calendar-status calendar-error">{error}</p>
-      ) : (
-        <p className="calendar-status calendar-loading">
-          {isLoading ? "Loading availability..." : " "}
+      <div className="sidebar">
+        <h1>Appointment Availability Calendar</h1>
+        <p className="calendar-subtitle">
+          Past days and Sundays are disabled. Future availability shifts from
+          green (more open slots) to red (fewer open slots). Click any available
+          day to see its appointments.
         </p>
-      )}
+
+        <div className="calendar-legend">
+          <span className="legend-item legend-high">High availability</span>
+          <span className="legend-item legend-medium">Medium</span>
+          <span className="legend-item legend-low">Low / Full</span>
+        </div>
+
+        {error ? (
+          <p className="calendar-status calendar-error">{error}</p>
+        ) : (
+          <p className="calendar-status calendar-loading">
+            {isLoading ? "Loading availability..." : " "}
+          </p>
+        )}
+      </div>
 
       <Calendar
         className="availability-calendar"
@@ -181,17 +193,19 @@ const Users = () => {
             setActiveStartDate(normalizeDate(nextStartDate));
           }
         }}
-        tileDisabled={({ date, view }) => view === "month" && isPastDay(date)}
+        tileDisabled={({ date, view }) =>
+          view === "month" && isNonWorkingDay(date)
+        }
         tileClassName={({ date, view }) => {
           if (view !== "month") return null;
-          if (isPastDay(date)) return "calendar-tile calendar-tile--past";
+          if (isNonWorkingDay(date)) return "calendar-tile calendar-tile--past";
 
           const day = availabilityByDate[toDateKey(date)];
           const bucket = getAvailabilityBucket(day);
           return `calendar-tile calendar-tile--availability-${bucket}`;
         }}
         tileContent={({ date, view }) => {
-          if (view !== "month" || isPastDay(date)) return null;
+          if (view !== "month" || isNonWorkingDay(date)) return null;
           const day = availabilityByDate[toDateKey(date)];
           if (!day) return null;
 
@@ -200,7 +214,7 @@ const Users = () => {
         }}
       />
 
-      {selectedDayData && !isPastDay(selectedDate) ? (
+      {selectedDayData && !isNonWorkingDay(selectedDate) ? (
         <div className="selected-day-summary">
           <h2>{selectedDate.toLocaleDateString()}</h2>
           <p>{selectedRemaining} appointment slot(s) available</p>
@@ -210,7 +224,7 @@ const Users = () => {
         </div>
       ) : null}
 
-      {!isPastDay(selectedDate) ? (
+      {!isNonWorkingDay(selectedDate) ? (
         <div className="selected-day-appointments">
           <h3>Appointments for {selectedDate.toLocaleDateString()}</h3>
 
