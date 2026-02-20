@@ -40,6 +40,8 @@
 
     color: var(--foreground);
     background-color: var(--background);
+
+    letter-spacing: 1px;
   }
 }
 

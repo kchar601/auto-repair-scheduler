@@ -9,6 +9,12 @@
   color: var(--foreground);
 }
 
+@media (prefers-color-scheme: dark) {
+  .users-page {
+    padding: 1.5rem 0.25rem;
+  }
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -274,7 +280,7 @@
 
 .appointment-create-form input,
 .appointment-create-form textarea {
-  width: 100%;
+  width: calc(100% - 1.1rem);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--secondary-background);
@@ -470,6 +476,7 @@
   bottom: 0.5rem;
   right: 0.5rem;
   display: flex;
+  gap: 0.35rem;
   justify-content: flex-end;
 }
 
@@ -479,10 +486,20 @@
   padding: 0.2rem 0.65rem;
   font-weight: 700;
   cursor: pointer;
+  color: var(--foreground);
 }
 
 .appointment-item-action-button[data-type="edit"] {
   background-color: var(--calendar-availability-1);
+}
+
+.appointment-item-action-button[data-type="delete"] {
+  background-color: var(--calendar-availability-0);
+}
+
+.appointment-item-action-button:disabled {
+  opacity: 0.7;
+  cursor: default;
 }
 
 .appointment-item-action-button:hover {

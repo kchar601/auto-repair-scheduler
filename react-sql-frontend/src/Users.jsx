@@ -58,8 +58,9 @@ function getApiErrorMessage(error, fallbackMessage) {
   return error?.response?.data?.message || fallbackMessage;
 }
 
-function getInitialAppointmentForm() {
+function getInitialAppointmentForm(scheduledDate = "") {
   return {
+    scheduledDate,
     lname: "",
     vehicle: "",
     phone: "",
@@ -83,6 +84,7 @@ function toTimeInputValue(value) {
 function getAppointmentFormFromRecord(appointment) {
   const kind = appointment?.kind || "DROPOFF";
   return {
+    scheduledDate: appointment?.scheduledDate || "",
     lname: appointment?.lname || "",
     vehicle: appointment?.vehicle || "",
     phone: appointment?.phone || "",
@@ -116,13 +118,14 @@ const Users = () => {
   const [refreshKey, setRefreshKey] = useState(0);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
   const [editingAppointmentId, setEditingAppointmentId] = useState(null);
+  const [deletingAppointmentId, setDeletingAppointmentId] = useState(null);
   const [isCreateSubmitting, setIsCreateSubmitting] = useState(false);
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState("");
   const [showAdvancedCreateFields, setShowAdvancedCreateFields] =
     useState(false);
   const [newAppointment, setNewAppointment] = useState(() =>
-    getInitialAppointmentForm(),
+    getInitialAppointmentForm(toDateKey(normalizeDate(new Date()))),
   );
 
   const today = useMemo(() => normalizeDate(new Date()), []);
@@ -218,7 +221,7 @@ const Users = () => {
     setCreateError("");
     setCreateSuccess("");
     setShowAdvancedCreateFields(false);
-    setNewAppointment(getInitialAppointmentForm());
+    setNewAppointment(getInitialAppointmentForm(toDateKey(selectedDate)));
   }, [selectedDate]);
 
   const selectedDayData =
@@ -241,7 +244,7 @@ const Users = () => {
   const needsPriorityTime = ["WAIT", "DUE_BY"].includes(newAppointment.kind);
 
   const resetCreateForm = () => {
-    setNewAppointment(getInitialAppointmentForm());
+    setNewAppointment(getInitialAppointmentForm(toDateKey(selectedDate)));
     setShowAdvancedCreateFields(false);
   };
 
@@ -313,8 +316,10 @@ const Users = () => {
     setCreateSuccess("");
 
     try {
+      const scheduledDateForSave =
+        newAppointment.scheduledDate || toDateKey(selectedDate);
       const payloadBase = {
-        scheduledDate: toDateKey(selectedDate),
+        scheduledDate: scheduledDateForSave,
         lname: newAppointment.lname.trim(),
         vehicle: newAppointment.vehicle.trim(),
         phone: newAppointment.phone.trim(),
@@ -355,6 +360,41 @@ const Users = () => {
       );
     } finally {
       setIsCreateSubmitting(false);
+    }
+  };
+
+  const handleDeleteAppointment = async (appointment) => {
+    const appointmentId = Number(appointment?.id);
+    if (!Number.isInteger(appointmentId)) return;
+
+    const customerName = appointment?.lname ? ` for ${appointment.lname}` : "";
+    const confirmed = window.confirm(
+      `Delete appointment${customerName} on ${selectedDate.toLocaleDateString()}? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingAppointmentId(appointmentId);
+    setCreateError("");
+    setCreateSuccess("");
+
+    try {
+      await axios.delete(`/appointments/${appointmentId}`);
+
+      if (isEditingAppointment && editingAppointmentId === appointmentId) {
+        closeAppointmentForm();
+      }
+
+      setCreateSuccess("Appointment deleted.");
+      setRefreshKey((current) => current + 1);
+    } catch (deleteRequestError) {
+      setCreateError(
+        getApiErrorMessage(
+          deleteRequestError,
+          "Could not delete appointment for this day.",
+        ),
+      );
+    } finally {
+      setDeletingAppointmentId(null);
     }
   };
 
@@ -508,7 +548,7 @@ const Users = () => {
               {selectedUsed} used / {selectedCapacity} total capacity
             </p>
             <p>
-              {selectedWaitUsed} used / {selectedWaitLimit} wait/due-by allowed
+              {selectedWaitUsed} used / {selectedWaitLimit} waiters allowed
             </p>
           </div>
         ) : null}
@@ -678,6 +718,18 @@ const Users = () => {
                     />
                     Wait limit override
                   </label>
+
+                  <label htmlFor="create-scheduled-date">
+                    Appointment date
+                  </label>
+                  <input
+                    id="create-scheduled-date"
+                    type="date"
+                    name="scheduledDate"
+                    value={newAppointment.scheduledDate}
+                    onChange={handleCreateFieldChange}
+                    required
+                  />
                 </div>
               ) : null}
 
@@ -780,9 +832,25 @@ const Users = () => {
                           type="button"
                           className="appointment-item-action-button"
                           data-type="edit"
+                          disabled={
+                            deletingAppointmentId === Number(appointment.id)
+                          }
                           onClick={() => loadAppointmentIntoForm(appointment)}
                         >
                           ✎
+                        </button>
+                        <button
+                          type="button"
+                          className="appointment-item-action-button"
+                          data-type="delete"
+                          disabled={
+                            deletingAppointmentId === Number(appointment.id)
+                          }
+                          onClick={() => handleDeleteAppointment(appointment)}
+                        >
+                          {deletingAppointmentId === Number(appointment.id)
+                            ? "Deleting..."
+                            : "🗙"}
                         </button>
                       </div>
                     </li>
