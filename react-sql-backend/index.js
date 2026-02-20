@@ -35,14 +35,17 @@ if (!dbPass) {
   process.exit(1);
 }
 // -----------------------
-// MySQL Connection (promise)
+// MySQL Pool (promise)
 // -----------------------
 const db = mysql
-  .createConnection({
+  .createPool({
     host: process.env.MYSQLHOST || "localhost",
     user: process.env.MYSQLUSER || "root",
     password: dbPass,
     database: process.env.MYSQLDATABASE || "schedule",
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
   })
   .promise();
 
@@ -97,11 +100,18 @@ function toMonthRange(year, month1to12) {
 
 function datesBetweenInclusive(fromStr, toStr) {
   const out = [];
-  const start = new Date(fromStr + "T00:00:00");
-  const end = new Date(toStr + "T00:00:00");
-  for (let d = start; d <= end; d = new Date(d.getTime() + 86400000)) {
-    const pad = (n) => String(n).padStart(2, "0");
-    out.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+  const [fromY, fromM, fromD] = fromStr.split("-").map(Number);
+  const [toY, toM, toD] = toStr.split("-").map(Number);
+  const pad = (n) => String(n).padStart(2, "0");
+
+  const current = new Date(Date.UTC(fromY, fromM - 1, fromD));
+  const end = new Date(Date.UTC(toY, toM - 1, toD));
+
+  while (current <= end) {
+    out.push(
+      `${current.getUTCFullYear()}-${pad(current.getUTCMonth() + 1)}-${pad(current.getUTCDate())}`,
+    );
+    current.setUTCDate(current.getUTCDate() + 1);
   }
   return out;
 }
@@ -166,7 +176,7 @@ function validateAppointmentPayload(body, { partial = false } = {}) {
 
   optionalIfPresent(
     "priorityTime",
-    (v) => normalizeTimeMaybe(v) !== null,
+    (v) => v === null || normalizeTimeMaybe(v) !== null,
     "priorityTime must be HH:MM or HH:MM:SS",
   );
 

@@ -1,7 +1,7 @@
 .users-page {
   width: 100%;
   margin: 0 auto;
-  padding: 1.5rem 1rem;
+  padding: 1.5rem 0.5rem;
   text-align: left;
   display: grid;
   grid-template-columns: 600px 800px;
@@ -209,6 +209,7 @@
 .selected-day-summary-actions {
   display: flex;
   align-items: center;
+  gap: 0.4rem;
 }
 
 .summary-action-button {
@@ -431,8 +432,8 @@
 .appointment-kind {
   position: absolute;
   display: flex;
-  top: 8px;
-  right: 8px;
+  top: 0.5rem;
+  right: 0.5rem;
   border-radius: 1rem;
   padding: 0.15rem 0.55rem;
   font-size: 0.72rem;
@@ -462,6 +463,30 @@
 
 .appointment-item strong {
   color: var(--foreground);
+}
+
+.appointment-item-actions {
+  position: absolute;
+  bottom: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.appointment-item-action-button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.appointment-item-action-button[data-type="edit"] {
+  background-color: var(--calendar-availability-1);
+}
+
+.appointment-item-action-button:hover {
+  filter: saturate(1.2);
 }
 
 .react-calendar__month-view__weekdays__weekday {

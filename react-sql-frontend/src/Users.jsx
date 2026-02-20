@@ -49,6 +49,56 @@ function formatPriorityTime(value) {
   return `${displayHour}:${minutesPart} ${suffix}`;
 }
 
+function getApiErrorMessage(error, fallbackMessage) {
+  const details = error?.response?.data?.details;
+  if (Array.isArray(details) && details.length > 0) {
+    return details.join(" ");
+  }
+
+  return error?.response?.data?.message || fallbackMessage;
+}
+
+function getInitialAppointmentForm() {
+  return {
+    lname: "",
+    vehicle: "",
+    phone: "",
+    services: "",
+    kind: "DROPOFF",
+    priorityTime: "",
+    isFirstJob: false,
+    slotsRequired: "1",
+    isCapacityOverride: false,
+    isWaitLimitOverride: false,
+  };
+}
+
+function toTimeInputValue(value) {
+  if (!value) return "";
+  const [hoursPart, minutesPart] = String(value).split(":");
+  if (!hoursPart || !minutesPart) return "";
+  return `${String(hoursPart).padStart(2, "0")}:${String(minutesPart).padStart(2, "0")}`;
+}
+
+function getAppointmentFormFromRecord(appointment) {
+  const kind = appointment?.kind || "DROPOFF";
+  return {
+    lname: appointment?.lname || "",
+    vehicle: appointment?.vehicle || "",
+    phone: appointment?.phone || "",
+    services: appointment?.services || "",
+    kind,
+    priorityTime:
+      kind === "WAIT" || kind === "DUE_BY"
+        ? toTimeInputValue(appointment?.priorityTime)
+        : "",
+    isFirstJob: Number(appointment?.isFirstJob) === 1,
+    slotsRequired: String(Math.max(1, Number(appointment?.slotsRequired || 1))),
+    isCapacityOverride: Number(appointment?.isCapacityOverride) === 1,
+    isWaitLimitOverride: Number(appointment?.isWaitLimitOverride) === 1,
+  };
+}
+
 const Users = () => {
   const [selectedDate, setSelectedDate] = useState(() =>
     normalizeDate(new Date()),
@@ -63,13 +113,25 @@ const Users = () => {
   const [isDayLoading, setIsDayLoading] = useState(false);
   const [dayError, setDayError] = useState("");
   const [availabilityMode, setAvailabilityMode] = useState("slots");
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
+  const [editingAppointmentId, setEditingAppointmentId] = useState(null);
+  const [isCreateSubmitting, setIsCreateSubmitting] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [createSuccess, setCreateSuccess] = useState("");
+  const [showAdvancedCreateFields, setShowAdvancedCreateFields] =
+    useState(false);
+  const [newAppointment, setNewAppointment] = useState(() =>
+    getInitialAppointmentForm(),
+  );
 
   const today = useMemo(() => normalizeDate(new Date()), []);
 
   const isPastDay = (date) => normalizeDate(date) < today;
 
   const isSunday = (date) => normalizeDate(date).getDay() === 0;
-  const isNonWorkingDay = (date) => isPastDay(date) || isSunday(date);
+  const isCalendarDisabledDay = (date) => isSunday(date);
+  const isPastOrSunday = (date) => isPastDay(date) || isSunday(date);
 
   useEffect(() => {
     const loadMonthAvailability = async () => {
@@ -102,17 +164,14 @@ const Users = () => {
     };
 
     loadMonthAvailability();
-  }, [activeStartDate]);
+  }, [activeStartDate, refreshKey]);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadDayDetails = async () => {
       const normalizedSelectedDate = normalizeDate(selectedDate);
-      if (
-        normalizedSelectedDate < today ||
-        normalizedSelectedDate.getDay() === 0
-      ) {
+      if (normalizedSelectedDate.getDay() === 0) {
         setDayDetails(null);
         setDayError("");
         setIsDayLoading(false);
@@ -151,7 +210,16 @@ const Users = () => {
     return () => {
       cancelled = true;
     };
-  }, [selectedDate, today]);
+  }, [selectedDate, today, refreshKey]);
+
+  useEffect(() => {
+    setIsCreateFormOpen(false);
+    setEditingAppointmentId(null);
+    setCreateError("");
+    setCreateSuccess("");
+    setShowAdvancedCreateFields(false);
+    setNewAppointment(getInitialAppointmentForm());
+  }, [selectedDate]);
 
   const selectedDayData =
     dayDetails?.summary || availabilityByDate[toDateKey(selectedDate)];
@@ -165,15 +233,139 @@ const Users = () => {
   const selectedWaitLimit = selectedDayData?.waitLimit || 0;
   const selectedWaitUsed = selectedDayData?.waitUsed || 0;
   const isWaitMode = availabilityMode === "wait";
+  const selectedDateIsPastDay = isPastDay(selectedDate);
+  const selectedDateIsSunday = isSunday(selectedDate);
+  const canCreateForSelectedDate =
+    !selectedDateIsPastDay && !selectedDateIsSunday;
+  const isEditingAppointment = editingAppointmentId !== null;
+  const needsPriorityTime = ["WAIT", "DUE_BY"].includes(newAppointment.kind);
+
+  const resetCreateForm = () => {
+    setNewAppointment(getInitialAppointmentForm());
+    setShowAdvancedCreateFields(false);
+  };
+
+  const openNewAppointmentForm = () => {
+    setEditingAppointmentId(null);
+    setCreateError("");
+    setCreateSuccess("");
+    resetCreateForm();
+    setIsCreateFormOpen(true);
+  };
+
+  const closeAppointmentForm = () => {
+    setIsCreateFormOpen(false);
+    setEditingAppointmentId(null);
+    setCreateError("");
+    setCreateSuccess("");
+    resetCreateForm();
+  };
+
+  const loadAppointmentIntoForm = (appointment) => {
+    const loadedForm = getAppointmentFormFromRecord(appointment);
+    const slotsRequired = Math.max(1, Number(loadedForm.slotsRequired || 1));
+    const shouldOpenAdvanced =
+      loadedForm.isFirstJob ||
+      loadedForm.isCapacityOverride ||
+      loadedForm.isWaitLimitOverride ||
+      slotsRequired !== 1;
+
+    setEditingAppointmentId(Number(appointment.id));
+    setCreateError("");
+    setCreateSuccess("");
+    setNewAppointment(loadedForm);
+    setShowAdvancedCreateFields(shouldOpenAdvanced);
+    setIsCreateFormOpen(true);
+  };
+
+  const handleCreateFieldChange = (event) => {
+    const { name, value, type, checked } = event.target;
+
+    setCreateError("");
+    setCreateSuccess("");
+
+    setNewAppointment((current) => {
+      if (name === "kind") {
+        const keepPriorityTime = ["WAIT", "DUE_BY"].includes(value);
+        return {
+          ...current,
+          kind: value,
+          priorityTime: keepPriorityTime ? current.priorityTime : "",
+          isWaitLimitOverride: keepPriorityTime
+            ? current.isWaitLimitOverride
+            : false,
+        };
+      }
+
+      return {
+        ...current,
+        [name]: type === "checkbox" ? checked : value,
+      };
+    });
+  };
+
+  const handleSaveAppointment = async (event) => {
+    event.preventDefault();
+    if (selectedDateIsSunday) return;
+
+    setIsCreateSubmitting(true);
+    setCreateError("");
+    setCreateSuccess("");
+
+    try {
+      const payloadBase = {
+        scheduledDate: toDateKey(selectedDate),
+        lname: newAppointment.lname.trim(),
+        vehicle: newAppointment.vehicle.trim(),
+        phone: newAppointment.phone.trim(),
+        services: newAppointment.services.trim(),
+        kind: newAppointment.kind,
+        isFirstJob: Boolean(newAppointment.isFirstJob),
+        slotsRequired: Math.max(1, Number(newAppointment.slotsRequired || 1)),
+        isCapacityOverride: Boolean(newAppointment.isCapacityOverride),
+        isWaitLimitOverride: Boolean(newAppointment.isWaitLimitOverride),
+      };
+
+      if (isEditingAppointment) {
+        await axios.put(`/appointments/${editingAppointmentId}`, {
+          ...payloadBase,
+          priorityTime: needsPriorityTime ? newAppointment.priorityTime : null,
+        });
+        setCreateSuccess("Appointment updated.");
+      } else {
+        await axios.post("/appointments", {
+          ...payloadBase,
+          ...(needsPriorityTime
+            ? { priorityTime: newAppointment.priorityTime }
+            : {}),
+        });
+        setCreateSuccess("Appointment created.");
+      }
+
+      setIsCreateFormOpen(false);
+      setEditingAppointmentId(null);
+      resetCreateForm();
+      setRefreshKey((current) => current + 1);
+    } catch (createRequestError) {
+      setCreateError(
+        getApiErrorMessage(
+          createRequestError,
+          "Could not create appointment for this day.",
+        ),
+      );
+    } finally {
+      setIsCreateSubmitting(false);
+    }
+  };
 
   return (
     <div className="users-page">
       <div className="sidebar">
         <h1>Appointment Availability Calendar</h1>
         <p className="calendar-subtitle">
-          Past days and Sundays are disabled. Future availability shifts from
-          green (more open slots) to red (fewer open slots). Click any available
-          day to see its appointments.
+          Sundays are disabled. Past dates remain selectable so appointments can
+          be reviewed and updated. Future availability shifts from green (more
+          open slots) to red (fewer open slots).
         </p>
 
         <div className="calendar-legend">
@@ -228,6 +420,7 @@ const Users = () => {
         <Calendar
           className="availability-calendar"
           value={selectedDate}
+          calendarType="gregory"
           onChange={(value) => {
             const nextDate = Array.isArray(value) ? value[0] : value;
             if (nextDate) setSelectedDate(normalizeDate(nextDate));
@@ -241,11 +434,11 @@ const Users = () => {
             }
           }}
           tileDisabled={({ date, view }) =>
-            view === "month" && isNonWorkingDay(date)
+            view === "month" && isCalendarDisabledDay(date)
           }
           tileClassName={({ date, view }) => {
             if (view !== "month") return null;
-            if (isNonWorkingDay(date))
+            if (isPastOrSunday(date))
               return "calendar-tile calendar-tile--past";
 
             const day = availabilityByDate[toDateKey(date)];
@@ -256,7 +449,7 @@ const Users = () => {
             return `calendar-tile calendar-tile--availability-${bucket}`;
           }}
           tileContent={({ date, view }) => {
-            if (view !== "month" || isNonWorkingDay(date)) return null;
+            if (view !== "month" || isPastOrSunday(date)) return null;
             const day = availabilityByDate[toDateKey(date)];
             if (!day) return null;
 
@@ -272,16 +465,44 @@ const Users = () => {
         />
       </div>
       <div>
-        {selectedDayData && !isNonWorkingDay(selectedDate) ? (
+        {selectedDayData && !selectedDateIsSunday ? (
           <div className="selected-day-summary">
-            <h2>
-              {selectedDate.toLocaleDateString(undefined, {
-                weekday: "long",
-                year: "numeric",
-                month: "numeric",
-                day: "numeric",
-              })}
-            </h2>
+            <div className="selected-day-summary-header">
+              <h2>
+                {selectedDate.toLocaleDateString(undefined, {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "numeric",
+                  day: "numeric",
+                })}
+              </h2>
+              <div className="selected-day-summary-actions">
+                {canCreateForSelectedDate || isEditingAppointment ? (
+                  <button
+                    type="button"
+                    className="summary-action-button"
+                    onClick={() => {
+                      if (isCreateFormOpen) {
+                        closeAppointmentForm();
+                      } else {
+                        openNewAppointmentForm();
+                      }
+                    }}
+                  >
+                    {isCreateFormOpen
+                      ? isEditingAppointment
+                        ? "Cancel edit"
+                        : "Cancel"
+                      : "New appointment"}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+            {createSuccess ? (
+              <p className="create-status create-status-success">
+                {createSuccess}
+              </p>
+            ) : null}
             <p>{selectedRemaining} appointment slot(s) available</p>
             <p>
               {selectedUsed} used / {selectedCapacity} total capacity
@@ -292,7 +513,196 @@ const Users = () => {
           </div>
         ) : null}
 
-        {!isNonWorkingDay(selectedDate) ? (
+        {isCreateFormOpen && !selectedDateIsSunday ? (
+          <div className="appointment-create-panel">
+            <h3>
+              {isEditingAppointment
+                ? "Update appointment for "
+                : "New appointment for "}
+              {selectedDate.toLocaleDateString(undefined, {
+                weekday: "long",
+                year: "numeric",
+                month: "numeric",
+                day: "numeric",
+              })}
+            </h3>
+
+            <form
+              className="appointment-create-form"
+              onSubmit={handleSaveAppointment}
+            >
+              <label htmlFor="create-lname">Last name</label>
+              <input
+                id="create-lname"
+                type="text"
+                name="lname"
+                value={newAppointment.lname}
+                onChange={handleCreateFieldChange}
+                required
+              />
+
+              <label htmlFor="create-phone">Phone</label>
+              <input
+                id="create-phone"
+                type="tel"
+                name="phone"
+                value={newAppointment.phone}
+                onChange={handleCreateFieldChange}
+                required
+              />
+
+              <label htmlFor="create-vehicle">Vehicle</label>
+              <input
+                id="create-vehicle"
+                type="text"
+                name="vehicle"
+                value={newAppointment.vehicle}
+                onChange={handleCreateFieldChange}
+                required
+              />
+
+              <label htmlFor="create-services">Services</label>
+              <textarea
+                id="create-services"
+                name="services"
+                value={newAppointment.services}
+                onChange={handleCreateFieldChange}
+                rows={3}
+                required
+              />
+
+              <fieldset className="kind-fieldset">
+                <legend>Appointment type</legend>
+                <label className="kind-option">
+                  <input
+                    type="radio"
+                    name="kind"
+                    value="DROPOFF"
+                    checked={newAppointment.kind === "DROPOFF"}
+                    onChange={handleCreateFieldChange}
+                  />
+                  Dropoff
+                </label>
+                <label className="kind-option">
+                  <input
+                    type="radio"
+                    name="kind"
+                    value="WAIT"
+                    checked={newAppointment.kind === "WAIT"}
+                    onChange={handleCreateFieldChange}
+                  />
+                  Wait
+                </label>
+                <label className="kind-option">
+                  <input
+                    type="radio"
+                    name="kind"
+                    value="DUE_BY"
+                    checked={newAppointment.kind === "DUE_BY"}
+                    onChange={handleCreateFieldChange}
+                  />
+                  Due by
+                </label>
+              </fieldset>
+
+              {needsPriorityTime ? (
+                <>
+                  <label htmlFor="create-priority-time">
+                    {newAppointment.kind === "WAIT"
+                      ? "Wait time"
+                      : "Due-by time"}
+                  </label>
+                  <input
+                    id="create-priority-time"
+                    type="time"
+                    name="priorityTime"
+                    value={newAppointment.priorityTime}
+                    onChange={handleCreateFieldChange}
+                    required
+                  />
+                </>
+              ) : null}
+
+              <button
+                type="button"
+                className="toggle-advanced-button"
+                onClick={() =>
+                  setShowAdvancedCreateFields((current) => !current)
+                }
+              >
+                {showAdvancedCreateFields
+                  ? "Hide advanced options"
+                  : "Show advanced options"}
+              </button>
+
+              {showAdvancedCreateFields ? (
+                <div className="advanced-fields">
+                  <label htmlFor="create-slots-required">Slots required</label>
+                  <input
+                    id="create-slots-required"
+                    type="number"
+                    min={1}
+                    step={1}
+                    name="slotsRequired"
+                    value={newAppointment.slotsRequired}
+                    onChange={handleCreateFieldChange}
+                  />
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      name="isFirstJob"
+                      checked={newAppointment.isFirstJob}
+                      onChange={handleCreateFieldChange}
+                    />
+                    First job
+                  </label>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      name="isCapacityOverride"
+                      checked={newAppointment.isCapacityOverride}
+                      onChange={handleCreateFieldChange}
+                    />
+                    Capacity override
+                  </label>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      name="isWaitLimitOverride"
+                      checked={newAppointment.isWaitLimitOverride}
+                      onChange={handleCreateFieldChange}
+                      disabled={!needsPriorityTime}
+                    />
+                    Wait limit override
+                  </label>
+                </div>
+              ) : null}
+
+              {createError ? (
+                <p className="create-status create-status-error">
+                  {createError}
+                </p>
+              ) : null}
+
+              <div className="create-form-actions">
+                <button type="submit" disabled={isCreateSubmitting}>
+                  {isCreateSubmitting
+                    ? isEditingAppointment
+                      ? "Saving..."
+                      : "Creating..."
+                    : isEditingAppointment
+                      ? "Save changes"
+                      : "Create appointment"}
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+
+        {!selectedDateIsSunday ? (
           <div className="selected-day-appointments">
             <h3>Appointments for {selectedDate.toLocaleDateString()}</h3>
 
@@ -320,21 +730,29 @@ const Users = () => {
                     <li key={appointment.id} className="appointment-item">
                       <div className="appointment-header">
                         <h4>{appointment.lname || "No Name"}</h4>
-                        <span
-                          className={`appointment-kind appointment-kind--${String(
-                            kind,
-                          ).toLowerCase()}`}
-                        >
-                          {kind}{" "}
-                          {formatPriorityTime(appointment.priorityTime) ===
-                          "N/A" ? (
-                            ""
-                          ) : (
-                            <>
-                              @ {formatPriorityTime(appointment.priorityTime)}
-                            </>
-                          )}
-                        </span>
+                        {isFirstJob ? (
+                          <span
+                            className={`appointment-kind appointment-kind--wait`}
+                          >
+                            First Job
+                          </span>
+                        ) : (
+                          <span
+                            className={`appointment-kind appointment-kind--${String(
+                              kind,
+                            ).toLowerCase()}`}
+                          >
+                            {kind}{" "}
+                            {formatPriorityTime(appointment.priorityTime) ===
+                            "N/A" ? (
+                              ""
+                            ) : (
+                              <>
+                                @ {formatPriorityTime(appointment.priorityTime)}
+                              </>
+                            )}
+                          </span>
+                        )}
                       </div>
 
                       <p>
@@ -353,11 +771,20 @@ const Users = () => {
                         <p>
                           <strong>Slots:</strong>{" "}
                           {Math.max(0, Number(appointment.slotsRequired || 0))}
-                          {isFirstJob ? " | First job" : ""}
                           {isCapacityOverride ? " | Capacity override" : ""}
                           {isWaitOverride ? " | Wait override" : ""}
                         </p>
                       )}
+                      <div className="appointment-item-actions">
+                        <button
+                          type="button"
+                          className="appointment-item-action-button"
+                          data-type="edit"
+                          onClick={() => loadAppointmentIntoForm(appointment)}
+                        >
+                          ✎
+                        </button>
+                      </div>
                     </li>
                   );
                 })}
