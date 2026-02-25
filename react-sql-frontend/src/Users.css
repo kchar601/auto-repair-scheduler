@@ -252,6 +252,14 @@
   color: var(--accent-foreground);
 }
 
+.create-status-info {
+  color: var(--muted-2);
+}
+
+.create-status-warning {
+  color: var(--tag-due-fg);
+}
+
 .appointment-create-panel {
   margin-top: 1rem;
   padding: 0.8rem 1rem;
@@ -315,6 +323,39 @@
 .kind-option input {
   width: auto;
   margin: 0;
+}
+
+.services-field {
+  position: relative;
+}
+
+#create-services {
+  resize: vertical;
+}
+
+.services-quickAdd {
+  position: absolute;
+  right: 0.85rem;
+  bottom: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+
+.services-quickAdd button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--foreground);
+  background: var(--secondary-background);
+  cursor: pointer;
+}
+
+.services-quickAdd button:hover {
+  filter: saturate(1.2);
 }
 
 .toggle-advanced-button {
@@ -471,10 +512,74 @@
   color: var(--foreground);
 }
 
-.appointment-item-actions {
+.appointment-status-section {
+  margin-top: 0.35rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.appointment-status-current {
+  margin: 0;
+  color: var(--muted-2);
+  font-size: 0.82rem;
+}
+
+.appointment-status-progress {
+  position: relative;
+  width: 100%;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: var(--border-muted);
+  overflow: hidden;
+}
+
+.appointment-status-progress-fill {
   position: absolute;
-  bottom: 0.5rem;
-  right: 0.5rem;
+  inset: 0 auto 0 0;
+  background: var(--primary-foreground);
+  transition: width 180ms ease-in-out;
+}
+
+.appointment-status-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.appointment-status-step {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.18rem 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted-2);
+  background: var(--primary-background);
+  cursor: pointer;
+}
+
+.appointment-status-step--reached {
+  color: var(--foreground);
+  background: var(--secondary-background);
+}
+
+.appointment-status-step--active {
+  border-color: var(--primary-foreground);
+  background: var(--calendar-active-bg);
+}
+
+.appointment-status-step:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+@media (max-width: 720px) {
+  .appointment-status-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.appointment-item-actions {
+  margin-top: 0.45rem;
   display: flex;
   gap: 0.35rem;
   justify-content: flex-end;
@@ -504,6 +609,118 @@
 
 .appointment-item-action-button:hover {
   filter: saturate(1.2);
+}
+
+.mechanics-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgb(0 0 0 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.mechanics-modal {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--primary-background);
+  padding: 0.9rem 1rem;
+  box-shadow: 0 14px 36px rgb(0 0 0 / 28%);
+}
+
+.mechanics-modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--foreground);
+}
+
+.mechanics-modal-caption {
+  margin: 0.45rem 0 0.7rem;
+  color: var(--muted-2);
+  font-size: 0.85rem;
+}
+
+.mechanics-checklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.mechanic-check-row {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--secondary-background);
+}
+
+.mechanic-check-row input,
+.mechanic-partial-fields input {
+  width: auto;
+  margin: 0;
+}
+
+.mechanic-primary-toggle,
+.mechanic-partial-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+  color: var(--muted-2);
+}
+
+.mechanic-check-name {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.mechanic-partial-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.mechanic-partial-fields label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.mechanic-partial-fields input {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--primary-background);
+  color: var(--foreground);
+  padding: 0.35rem 0.45rem;
+  font-size: 0.82rem;
+  font-family: inherit;
+}
+
+.mechanics-modal-actions {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
+.mechanics-modal-save {
+  border-color: var(--primary-foreground);
+  color: var(--primary-background);
+  background: var(--primary-foreground);
+}
+
+.mechanics-modal-save:disabled {
+  opacity: 0.7;
+  cursor: default;
 }
 
 .react-calendar__month-view__weekdays__weekday {

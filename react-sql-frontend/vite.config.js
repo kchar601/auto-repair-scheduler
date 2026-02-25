@@ -24,6 +24,14 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/appointment-locks': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/realtime': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 })
