@@ -135,3 +135,24 @@ th {
   font-weight: 600;
   letter-spacing: 1.2px;
 }
+
+.app-version-badge {
+  position: fixed;
+  right: 0.75rem;
+  bottom: 0.6rem;
+  z-index: 1200;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted-2);
+  background: var(--secondary-background);
+}
+
+@media print {
+  .app-version-badge {
+    display: none;
+  }
+}
