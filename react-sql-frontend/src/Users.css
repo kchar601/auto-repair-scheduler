@@ -1,10 +1,10 @@
 .users-page {
-  width: 100%;
+  width: calc(100% - 1rem);
   margin: 0 auto;
   padding: 1.5rem 0.5rem;
   text-align: left;
   display: grid;
-  grid-template-columns: 600px 800px;
+  grid-template-columns: 0.4fr 0.6fr;
   gap: 1rem;
   color: var(--foreground);
 }
@@ -231,6 +231,10 @@
 
 .summary-action-button:hover {
   filter: saturate(1.2);
+}
+
+.summary-action-button--print {
+  border-color: var(--primary-foreground);
 }
 
 .selected-day-summary p {
@@ -611,6 +615,70 @@
   filter: saturate(1.2);
 }
 
+.daily-print-sheet {
+  display: none;
+}
+
+.daily-print-header h1 {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: 0;
+}
+
+.daily-print-header p {
+  margin: 0.15rem 0 0;
+}
+
+.daily-print-summary {
+  margin: 0.6rem 0 0.7rem;
+  font-size: 0.82rem;
+}
+
+.daily-print-empty {
+  margin: 0.8rem 0 0;
+}
+
+.daily-print-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.daily-print-table th,
+.daily-print-table td {
+  border: 1px solid #b7b7b7;
+  padding: 0.35rem 0.45rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.daily-print-table th {
+  color: #111;
+  background: #efefef;
+  font-size: 0.8rem;
+}
+
+.daily-print-table td {
+  color: #111;
+  font-size: 0.78rem;
+  word-break: break-word;
+}
+
+.daily-print-table p {
+  margin: 0;
+}
+
+.daily-print-index {
+  width: 2.2rem;
+  text-align: center;
+}
+
+.daily-print-subtext {
+  margin-top: 0.15rem;
+  color: #3a3a3a;
+  font-size: 0.72rem;
+}
+
 .mechanics-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -725,4 +793,47 @@
 
 .react-calendar__month-view__weekdays__weekday {
   color: var(--foreground);
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 0.5in;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  .users-page {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    display: block;
+    color: #000;
+  }
+
+  .sidebar,
+  .day-details-pane > *:not(.daily-print-sheet),
+  .mechanics-modal-backdrop {
+    display: none !important;
+  }
+
+  .day-details-pane {
+    display: block;
+  }
+
+  .daily-print-sheet {
+    display: block;
+  }
+
+  .daily-print-header h1 {
+    color: #000;
+  }
+
+  .daily-print-header p,
+  .daily-print-summary,
+  .daily-print-empty {
+    color: #202020;
+  }
 }

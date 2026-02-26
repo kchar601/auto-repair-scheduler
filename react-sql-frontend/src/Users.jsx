@@ -25,7 +25,10 @@ function getAvailabilityBucket(day, mode = "slots") {
       : Number(day.capacitySlots || 0);
   const remaining =
     mode === "wait"
-      ? Math.max(0, Number(day.effectiveWaitRemaining ?? day.waitRemaining ?? 0))
+      ? Math.max(
+          0,
+          Number(day.effectiveWaitRemaining ?? day.waitRemaining ?? 0),
+        )
       : Math.max(
           0,
           Number(day.effectiveRemainingSlots ?? day.remainingSlots ?? 0),
@@ -52,6 +55,33 @@ function formatPriorityTime(value) {
   const suffix = hours >= 12 ? "PM" : "AM";
   const displayHour = hours % 12 || 12;
   return `${displayHour}:${minutesPart} ${suffix}`;
+}
+
+function formatPhoneNumber(value) {
+  if (!value) return "N/A";
+
+  const raw = String(value).trim();
+  if (!raw) return "N/A";
+
+  const digits = raw.replace(/\D/g, "");
+  const normalized =
+    digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+
+  if (normalized.length !== 10) return raw;
+
+  return `(${normalized.slice(0, 3)}) ${normalized.slice(3, 6)}-${normalized.slice(6)}`;
+}
+
+function getAppointmentTypeLabel(appointment) {
+  const kind = String(appointment?.kind || "DROPOFF")
+    .trim()
+    .toUpperCase();
+  const kindLabel =
+    kind === "WAIT" ? "Wait" : kind === "DUE_BY" ? "Due by" : "Dropoff";
+  if (!["WAIT", "DUE_BY"].includes(kind)) return kindLabel;
+
+  const priority = formatPriorityTime(appointment?.priorityTime);
+  return priority === "N/A" ? kindLabel : `${kindLabel} @ ${priority}`;
 }
 
 function getApiErrorMessage(error, fallbackMessage) {
@@ -330,7 +360,11 @@ const Users = () => {
     dayDetails?.summary || availabilityByDate[toDateKey(selectedDate)];
   const selectedRemaining = Math.max(
     0,
-    Number(selectedDayData?.effectiveRemainingSlots ?? selectedDayData?.remainingSlots ?? 0),
+    Number(
+      selectedDayData?.effectiveRemainingSlots ??
+        selectedDayData?.remainingSlots ??
+        0,
+    ),
   );
   const selectedCapacity = Number(selectedDayData?.capacitySlots || 0);
   const selectedUsed = Number(
@@ -343,12 +377,21 @@ const Users = () => {
   const selectedWaitRemaining = Math.max(
     0,
     Number(
-      selectedDayData?.effectiveWaitRemaining ?? selectedDayData?.waitRemaining ?? 0,
+      selectedDayData?.effectiveWaitRemaining ??
+        selectedDayData?.waitRemaining ??
+        0,
     ),
   );
   const isWaitMode = availabilityMode === "wait";
   const selectedDateIsPastDay = isPastDay(selectedDate);
   const selectedDateIsSunday = isSunday(selectedDate);
+  const selectedDateLongLabel = selectedDate.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  });
+  const selectedDateShortLabel = selectedDate.toLocaleDateString();
   const canCreateForSelectedDate =
     !selectedDateIsPastDay && !selectedDateIsSunday;
   const isEditingAppointment = editingAppointmentId !== null;
@@ -393,6 +436,10 @@ const Users = () => {
     setCreateError("");
     setCreateSuccess("");
     resetCreateForm();
+  };
+
+  const handlePrintDailyAppointments = () => {
+    window.print();
   };
 
   const closeMechanicsModal = () => {
@@ -747,7 +794,10 @@ const Users = () => {
       setIsCreateLocking(true);
       try {
         const response = createLock?.token
-          ? await axios.put(`/appointment-locks/${createLock.token}`, createLockPayload)
+          ? await axios.put(
+              `/appointment-locks/${createLock.token}`,
+              createLockPayload,
+            )
           : await axios.post("/appointment-locks", createLockPayload);
         if (cancelled) return;
 
@@ -816,6 +866,8 @@ const Users = () => {
     setIsCreateLocking(false);
     void axios.delete(`/appointment-locks/${tokenToRelease}`).catch(() => {});
   }, [createLock?.token, shouldManageCreateLock]);
+
+  const printAppointments = selectedAppointments;
 
   return (
     <div className="users-page">
@@ -913,10 +965,15 @@ const Users = () => {
             if (!day) return null;
 
             const remaining = isWaitMode
-              ? Math.max(0, Number(day.effectiveWaitRemaining ?? day.waitRemaining ?? 0))
+              ? Math.max(
+                  0,
+                  Number(day.effectiveWaitRemaining ?? day.waitRemaining ?? 0),
+                )
               : Math.max(
                   0,
-                  Number(day.effectiveRemainingSlots ?? day.remainingSlots ?? 0),
+                  Number(
+                    day.effectiveRemainingSlots ?? day.remainingSlots ?? 0,
+                  ),
                 );
             return (
               <span className="calendar-openings">
@@ -926,18 +983,11 @@ const Users = () => {
           }}
         />
       </div>
-      <div>
+      <div className="day-details-pane">
         {selectedDayData && !selectedDateIsSunday ? (
           <div className="selected-day-summary">
             <div className="selected-day-summary-header">
-              <h2>
-                {selectedDate.toLocaleDateString(undefined, {
-                  weekday: "long",
-                  year: "numeric",
-                  month: "numeric",
-                  day: "numeric",
-                })}
-              </h2>
+              <h2>{selectedDateLongLabel}</h2>
               <div className="selected-day-summary-actions">
                 <button
                   type="button"
@@ -951,6 +1001,13 @@ const Users = () => {
                   }}
                 >
                   {isMechanicsModalOpen ? "Close mechanics" : "Edit mechanics"}
+                </button>
+                <button
+                  type="button"
+                  className="summary-action-button summary-action-button--print"
+                  onClick={handlePrintDailyAppointments}
+                >
+                  Print day
                 </button>
                 {canCreateForSelectedDate || isEditingAppointment ? (
                   <button
@@ -987,7 +1044,10 @@ const Users = () => {
               {selectedWaitRemaining} open)
             </p>
             {Number(selectedDayData?.draftLockCount || 0) > 0 ? (
-              <p>{Number(selectedDayData?.draftLockCount || 0)} temporary hold(s) active</p>
+              <p>
+                {Number(selectedDayData?.draftLockCount || 0)} temporary hold(s)
+                active
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -998,17 +1058,14 @@ const Users = () => {
               {isEditingAppointment
                 ? "Update appointment for "
                 : "New appointment for "}
-              {selectedDate.toLocaleDateString(undefined, {
-                weekday: "long",
-                year: "numeric",
-                month: "numeric",
-                day: "numeric",
-              })}
+              {selectedDateLongLabel}
             </h3>
             {!isEditingAppointment ? (
               <p
                 className={`create-status ${
-                  hasActiveCreateLock ? "create-status-info" : "create-status-warning"
+                  hasActiveCreateLock
+                    ? "create-status-info"
+                    : "create-status-warning"
                 }`}
               >
                 {isCreateLocking
@@ -1087,7 +1144,10 @@ const Users = () => {
                   {newAppointment.services.includes("Oil Change") ? (
                     ""
                   ) : (
-                    <button type="button" onClick={() => addQuickService("Oil Change")}>
+                    <button
+                      type="button"
+                      onClick={() => addQuickService("Oil Change")}
+                    >
                       + Oil Change
                     </button>
                   )}
@@ -1237,7 +1297,8 @@ const Users = () => {
                   type="submit"
                   disabled={
                     isCreateSubmitting ||
-                    (!isEditingAppointment && (isCreateLocking || !hasActiveCreateLock))
+                    (!isEditingAppointment &&
+                      (isCreateLocking || !hasActiveCreateLock))
                   }
                 >
                   {isCreateSubmitting
@@ -1255,7 +1316,7 @@ const Users = () => {
 
         {!selectedDateIsSunday ? (
           <div className="selected-day-appointments">
-            <h3>Appointments for {selectedDate.toLocaleDateString()}</h3>
+            <h3>Appointments for {selectedDateShortLabel}</h3>
 
             {dayError ? (
               <p className="day-details-status day-details-error">{dayError}</p>
@@ -1269,7 +1330,7 @@ const Users = () => {
               </p>
             ) : (
               <ul className="appointment-list">
-                {selectedAppointments.map((appointment) => {
+                {printAppointments.map((appointment) => {
                   const appointmentId = Number(appointment.id);
                   const kind = appointment.kind || "DROPOFF";
                   const isFirstJob = Number(appointment.isFirstJob) === 1;
@@ -1325,7 +1386,8 @@ const Users = () => {
                         <strong>Vehicle:</strong> {appointment.vehicle || "N/A"}
                       </p>
                       <p>
-                        <strong>Phone:</strong> {appointment.phone || "N/A"}
+                        <strong>Phone:</strong>{" "}
+                        {formatPhoneNumber(appointment.phone)}
                       </p>
                       <p>
                         <strong>Services:</strong>{" "}
@@ -1422,6 +1484,48 @@ const Users = () => {
               </ul>
             )}
           </div>
+        ) : null}
+
+        {!selectedDateIsSunday ? (
+          <section className="daily-print-sheet" aria-hidden="true">
+            <header className="daily-print-header">
+              <h1>Daily Appointments</h1>
+              <p>{selectedDateLongLabel}</p>
+            </header>
+
+            {dayError ? (
+              <p className="daily-print-empty">{dayError}</p>
+            ) : isDayLoading ? (
+              <p className="daily-print-empty">Loading appointments...</p>
+            ) : printAppointments.length === 0 ? (
+              <p className="daily-print-empty">
+                No appointments scheduled for this day.
+              </p>
+            ) : (
+              <table className="daily-print-table">
+                <thead>
+                  <tr>
+                    <th>Appointment Type</th>
+                    <th>Last Name</th>
+                    <th>Vehicle</th>
+                    <th>Service / Reason</th>
+                    <th>Phone</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {printAppointments.map((appointment) => (
+                    <tr key={appointment.id}>
+                      <td>{getAppointmentTypeLabel(appointment)}</td>
+                      <td>{appointment.lname || "No Name"}</td>
+                      <td>{appointment.vehicle || "N/A"}</td>
+                      <td>{appointment.services || "N/A"}</td>
+                      <td>{formatPhoneNumber(appointment.phone)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
         ) : null}
 
         {isMechanicsModalOpen ? (
