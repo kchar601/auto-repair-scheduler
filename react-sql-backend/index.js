@@ -1991,6 +1991,6 @@ app.delete("/appointments/:id", async (req, res) => {
 
 // -----------------------
 
-https.createServer(options, app).listen(443, () => {
+https.createServer(options, app).listen(443, "0.0.0.0", () => {
   console.log("HTTPS server running on port 443");
 });
