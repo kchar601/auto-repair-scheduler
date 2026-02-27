@@ -28,12 +28,26 @@ const cors = require("cors");
 const path = require("path");
 const dotenv = require("dotenv");
 const crypto = require("crypto");
+const https = require("https");
+const fs = require("fs");
+
+const options = {
+  key: fs.readFileSync(
+    path.resolve(__dirname, "certs/burnsschedule.local-key.pem"),
+  ),
+  cert: fs.readFileSync(
+    path.resolve(__dirname, "certs/burnsschedule.local.pem"),
+  ),
+};
 
 // Always load backend .env regardless of the current working directory.
 dotenv.config({ path: path.resolve(__dirname, ".env") });
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const frontendDistPath = path.resolve(__dirname, "../react-sql-frontend/dist");
+app.use(express.static(frontendDistPath));
 
 const DRAFT_LOCK_TTL_SECONDS = Math.max(
   30,
@@ -54,10 +68,15 @@ const DEFAULT_OFF_MECHANIC_NAMES = new Set(
     .filter(Boolean),
 );
 
-const dbPass = process.env.MYSQLPASS ?? process.env.MYSQL_PASSWORD ?? process.env.DB_PASSWORD;
+const dbPass =
+  process.env.MYSQLPASS ??
+  process.env.MYSQL_PASSWORD ??
+  process.env.DB_PASSWORD;
 
 if (!dbPass) {
-  console.error("Missing MySQL password. Set MYSQLPASS in react-sql-backend/.env.");
+  console.error(
+    "Missing MySQL password. Set MYSQLPASS in react-sql-backend/.env.",
+  );
   process.exit(1);
 }
 // -----------------------
@@ -218,12 +237,17 @@ function baseCapacityByMechanics(n) {
 }
 
 function normalizeMechanicNamePart(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function isDefaultOffMechanicRow(row) {
   const mechanicId = Number(row?.id);
-  if (Number.isInteger(mechanicId) && DEFAULT_OFF_MECHANIC_IDS.has(mechanicId)) {
+  if (
+    Number.isInteger(mechanicId) &&
+    DEFAULT_OFF_MECHANIC_IDS.has(mechanicId)
+  ) {
     return true;
   }
   if (DEFAULT_OFF_MECHANIC_NAMES.size === 0) return false;
@@ -559,7 +583,11 @@ function sendSseEvent(client, eventName, payload) {
   client.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
-function broadcastScheduleChanged({ dates = [], reason = "unknown", extra = {} } = {}) {
+function broadcastScheduleChanged({
+  dates = [],
+  reason = "unknown",
+  extra = {},
+} = {}) {
   if (realtimeClients.size === 0) return;
   const normalizedDates = normalizeDateList(dates);
   const payload = {
@@ -589,7 +617,9 @@ async function sweepExpiredDraftLocksAndBroadcast() {
       WHERE expiresAt <= NOW()
       `,
     );
-    const expiredDates = normalizeDateList(rows.map((row) => row.scheduledDate));
+    const expiredDates = normalizeDateList(
+      rows.map((row) => row.scheduledDate),
+    );
     if (expiredDates.length === 0) return;
     await purgeExpiredDraftLocks(db);
     broadcastScheduleChanged({
@@ -886,7 +916,10 @@ app.post("/appointment-locks", async (req, res) => {
     const summary = await getDaySummary(payload.scheduledDate, conn, {
       includeDraftLocks: false,
     });
-    const draftLocks = await getDraftLockAggregateForDate(payload.scheduledDate, conn);
+    const draftLocks = await getDraftLockAggregateForDate(
+      payload.scheduledDate,
+      conn,
+    );
     const effectiveUsedSlots = summary.usedSlots + draftLocks.lockedSlots;
     const effectiveWaitUsed = summary.waitUsed + draftLocks.lockedWait;
 
@@ -906,7 +939,10 @@ app.post("/appointment-locks", async (req, res) => {
       }
     }
 
-    if (["WAIT", "DUE_BY"].includes(payload.kind) && !payload.isWaitLimitOverride) {
+    if (
+      ["WAIT", "DUE_BY"].includes(payload.kind) &&
+      !payload.isWaitLimitOverride
+    ) {
       if (effectiveWaitUsed + 1 > summary.waitLimit) {
         await conn.rollback();
         return res.status(409).json({
@@ -967,7 +1003,9 @@ app.put("/appointment-locks/:token", async (req, res) => {
       .json({ error: "BAD_REQUEST", message: "Invalid lock token" });
   }
 
-  const partialErrors = validateDraftLockPayload(req.body || {}, { partial: true });
+  const partialErrors = validateDraftLockPayload(req.body || {}, {
+    partial: true,
+  });
   if (partialErrors.length > 0) {
     return res
       .status(400)
@@ -979,7 +1017,9 @@ app.put("/appointment-locks/:token", async (req, res) => {
     await conn.beginTransaction();
     await purgeExpiredDraftLocks(conn);
 
-    const existing = await getDraftLockByToken(token, conn, { forUpdate: true });
+    const existing = await getDraftLockByToken(token, conn, {
+      forUpdate: true,
+    });
     if (!existing) {
       await conn.rollback();
       return res.status(404).json({
@@ -1017,9 +1057,13 @@ app.put("/appointment-locks/:token", async (req, res) => {
     const summary = await getDaySummary(payload.scheduledDate, conn, {
       includeDraftLocks: false,
     });
-    const draftLocks = await getDraftLockAggregateForDate(payload.scheduledDate, conn, {
-      excludeToken: token,
-    });
+    const draftLocks = await getDraftLockAggregateForDate(
+      payload.scheduledDate,
+      conn,
+      {
+        excludeToken: token,
+      },
+    );
     const effectiveUsedSlots = summary.usedSlots + draftLocks.lockedSlots;
     const effectiveWaitUsed = summary.waitUsed + draftLocks.lockedWait;
 
@@ -1039,7 +1083,10 @@ app.put("/appointment-locks/:token", async (req, res) => {
       }
     }
 
-    if (["WAIT", "DUE_BY"].includes(payload.kind) && !payload.isWaitLimitOverride) {
+    if (
+      ["WAIT", "DUE_BY"].includes(payload.kind) &&
+      !payload.isWaitLimitOverride
+    ) {
       if (effectiveWaitUsed + 1 > summary.waitLimit) {
         await conn.rollback();
         return res.status(409).json({
@@ -1117,14 +1164,18 @@ app.delete("/appointment-locks/:token", async (req, res) => {
     await conn.beginTransaction();
     await purgeExpiredDraftLocks(conn);
 
-    const existing = await getDraftLockByToken(token, conn, { forUpdate: true });
+    const existing = await getDraftLockByToken(token, conn, {
+      forUpdate: true,
+    });
     if (!existing) {
       await conn.rollback();
       return res.json({ released: false, token });
     }
 
     await lockScheduleDay(existing.scheduledDate, conn);
-    await conn.query(`DELETE FROM appointmentDraftLock WHERE token = ?`, [token]);
+    await conn.query(`DELETE FROM appointmentDraftLock WHERE token = ?`, [
+      token,
+    ]);
 
     const summaryAfter = await getDaySummary(existing.scheduledDate, conn);
     await conn.commit();
@@ -1356,7 +1407,9 @@ app.put("/schedule/day/mechanics", async (req, res) => {
       }
 
       const workingIdSet = new Set(numericIds);
-      const invalidIds = [...workingIdSet].filter((id) => !allMechanicSet.has(id));
+      const invalidIds = [...workingIdSet].filter(
+        (id) => !allMechanicSet.has(id),
+      );
       if (invalidIds.length > 0) {
         await conn.rollback();
         return res.status(400).json({
@@ -1554,9 +1607,13 @@ app.post("/appointments", async (req, res) => {
     const summary = await getDaySummary(payload.scheduledDate, conn, {
       includeDraftLocks: false,
     });
-    const draftLocks = await getDraftLockAggregateForDate(payload.scheduledDate, conn, {
-      excludeToken: payload.draftLockToken,
-    });
+    const draftLocks = await getDraftLockAggregateForDate(
+      payload.scheduledDate,
+      conn,
+      {
+        excludeToken: payload.draftLockToken,
+      },
+    );
     const effectiveUsedSlots = summary.usedSlots + draftLocks.lockedSlots;
     const effectiveWaitUsed = summary.waitUsed + draftLocks.lockedWait;
 
@@ -1578,7 +1635,10 @@ app.post("/appointments", async (req, res) => {
     }
 
     // Wait limit rule
-    if (["WAIT", "DUE_BY"].includes(payload.kind) && !payload.isWaitLimitOverride) {
+    if (
+      ["WAIT", "DUE_BY"].includes(payload.kind) &&
+      !payload.isWaitLimitOverride
+    ) {
       if (effectiveWaitUsed + 1 > summary.waitLimit) {
         await conn.rollback();
         return res.status(409).json({
@@ -1808,7 +1868,10 @@ app.put("/appointments/:id", async (req, res) => {
     }
 
     // Wait rule on new date
-    if (["WAIT", "DUE_BY"].includes(updated.kind) && !updated.isWaitLimitOverride) {
+    if (
+      ["WAIT", "DUE_BY"].includes(updated.kind) &&
+      !updated.isWaitLimitOverride
+    ) {
       if (summaryNewDate.effectiveWaitUsed + 1 > summaryNewDate.waitLimit) {
         await conn.rollback();
         return res.status(409).json({
@@ -1927,8 +1990,7 @@ app.delete("/appointments/:id", async (req, res) => {
 });
 
 // -----------------------
-const PORT = 3001;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
 
+https.createServer(options, app).listen(443, () => {
+  console.log("HTTPS server running on port 443");
+});
