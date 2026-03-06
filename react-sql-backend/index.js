@@ -7,6 +7,7 @@
  *  - PUT  /schedule/day/mechanics?date=YYYY-MM-DD
  *  - GET  /schedule/day?date=YYYY-MM-DD
  *  - GET  /appointments/search?q=lastname
+ *  - GET  /appointments/queued?excludeDate=YYYY-MM-DD
  *  - GET  /appointments/:id
  *  - POST /appointments
  *  - PUT  /appointments/:id
@@ -230,9 +231,9 @@ function isSunday(dateStr) {
 }
 
 function baseCapacityByMechanics(n) {
-  if (n >= 4) return 20;
+  if (n >= 4) return 19;
   if (n >= 3) return 16;
-  if (n === 2) return 10;
+  if (n === 2) return 12;
   if (n === 1) return 6;
   return 0;
 }
@@ -705,7 +706,6 @@ async function getDaySummary(
   { includeDraftLocks = true, excludeDraftLockToken = null } = {},
 ) {
   const cap = await getCapacityMeta(dateStr, conn);
-  const waitLimit = getWaitLimit(dateStr);
 
   const [[agg]] = await conn.query(
     `
@@ -736,20 +736,24 @@ async function getDaySummary(
 
   const effectiveUsedSlots = usedSlots + draftLocks.lockedSlots;
   const effectiveWaitUsed = waitUsed + draftLocks.lockedWait;
+  const remainingSlots = cap.capacitySlots - usedSlots;
+  const effectiveRemainingSlots = cap.capacitySlots - effectiveUsedSlots;
+  const waitLimit =
+    effectiveRemainingSlots <= 0 ? 0 : getWaitLimit(dateStr);
 
   return {
     date: dateStr,
     ...cap,
     usedSlots,
-    remainingSlots: cap.capacitySlots - usedSlots,
+    remainingSlots,
     effectiveUsedSlots,
-    effectiveRemainingSlots: cap.capacitySlots - effectiveUsedSlots,
+    effectiveRemainingSlots,
     overbookedSlots,
     waitLimit,
     waitUsed,
-    waitRemaining: waitLimit - waitUsed,
+    waitRemaining: Math.max(0, waitLimit - waitUsed),
     effectiveWaitUsed,
-    effectiveWaitRemaining: waitLimit - effectiveWaitUsed,
+    effectiveWaitRemaining: Math.max(0, waitLimit - effectiveWaitUsed),
     waitOverrides,
     draftLockCount: draftLocks.lockCount,
     draftLockedSlots: draftLocks.lockedSlots,
@@ -1008,7 +1012,7 @@ app.post("/appointment-locks", async (req, res) => {
           waitLimit: summary.waitLimit,
           waitUsed: summary.waitUsed,
           draftLockedWait: draftLocks.lockedWait,
-          waitRemaining: summary.waitLimit - effectiveWaitUsed,
+          waitRemaining: Math.max(0, summary.waitLimit - effectiveWaitUsed),
         });
       }
     }
@@ -1152,7 +1156,7 @@ app.put("/appointment-locks/:token", async (req, res) => {
           waitLimit: summary.waitLimit,
           waitUsed: summary.waitUsed,
           draftLockedWait: draftLocks.lockedWait,
-          waitRemaining: summary.waitLimit - effectiveWaitUsed,
+          waitRemaining: Math.max(0, summary.waitLimit - effectiveWaitUsed),
         });
       }
     }
@@ -1661,6 +1665,68 @@ app.get("/appointments/search", async (req, res) => {
   }
 });
 
+// GET /appointments/queued?excludeDate=YYYY-MM-DD&limit=50
+app.get("/appointments/queued", async (req, res) => {
+  try {
+    const excludeDate = String(req.query.excludeDate || "").trim();
+    if (!isValidDateString(excludeDate)) {
+      return res.status(400).json({
+        error: "BAD_REQUEST",
+        message: "excludeDate must be YYYY-MM-DD",
+      });
+    }
+
+    const parsedLimit = Number(req.query.limit);
+    const limit = Math.max(
+      1,
+      Math.min(
+        200,
+        Number.isFinite(parsedLimit) ? Math.trunc(parsedLimit) : 50,
+      ),
+    );
+
+    const [rows] = await db.query(
+      `
+      SELECT
+        id,
+        scheduledDate,
+        lname,
+        vehicle,
+        phone,
+        services,
+        kind,
+        status,
+        priorityTime,
+        isFirstJob,
+        slotsRequired,
+        isCapacityOverride,
+        isWaitLimitOverride
+      FROM appointments
+      WHERE status = 'QUEUED_FOR_TECHNICIAN'
+        AND scheduledDate <> ?
+      ORDER BY scheduledDate ASC, lname ASC, priorityTime IS NULL, priorityTime ASC, id ASC
+      LIMIT ?
+      `,
+      [excludeDate, limit],
+    );
+
+    const appointments = rows.map((row) => {
+      const normalizedDate = toDateOnlyString(row.scheduledDate);
+      return {
+        ...row,
+        scheduledDate: normalizedDate || row.scheduledDate,
+      };
+    });
+
+    res.json({
+      excludeDate,
+      appointments,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "SERVER_ERROR", message: err.message });
+  }
+});
+
 // GET /appointments/:id
 app.get("/appointments/:id", async (req, res) => {
   try {
@@ -1769,7 +1835,7 @@ app.post("/appointments", async (req, res) => {
           waitLimit: summary.waitLimit,
           waitUsed: summary.waitUsed,
           draftLockedWait: draftLocks.lockedWait,
-          waitRemaining: summary.waitLimit - effectiveWaitUsed,
+          waitRemaining: Math.max(0, summary.waitLimit - effectiveWaitUsed),
         });
       }
     }
@@ -1931,7 +1997,6 @@ app.put("/appointments/:id", async (req, res) => {
     // Helper to get day agg excluding a specific id (within txn)
     async function getDaySummaryExcludingId(dateStr, excludeId) {
       const cap = await getCapacityMeta(dateStr, conn);
-      const waitLimit = getWaitLimit(dateStr);
 
       const [[agg]] = await conn.query(
         `
@@ -1951,20 +2016,24 @@ app.put("/appointments/:id", async (req, res) => {
       const draftLocks = await getDraftLockAggregateForDate(dateStr, conn);
       const effectiveUsedSlots = usedSlots + draftLocks.lockedSlots;
       const effectiveWaitUsed = waitUsed + draftLocks.lockedWait;
+      const remainingSlots = cap.capacitySlots - usedSlots;
+      const effectiveRemainingSlots = cap.capacitySlots - effectiveUsedSlots;
+      const waitLimit =
+        effectiveRemainingSlots <= 0 ? 0 : getWaitLimit(dateStr);
 
       return {
         date: dateStr,
         ...cap,
         usedSlots,
-        remainingSlots: cap.capacitySlots - usedSlots,
+        remainingSlots,
         effectiveUsedSlots,
-        effectiveRemainingSlots: cap.capacitySlots - effectiveUsedSlots,
+        effectiveRemainingSlots,
         overbookedSlots,
         waitLimit,
         waitUsed,
-        waitRemaining: waitLimit - waitUsed,
+        waitRemaining: Math.max(0, waitLimit - waitUsed),
         effectiveWaitUsed,
-        effectiveWaitRemaining: waitLimit - effectiveWaitUsed,
+        effectiveWaitRemaining: Math.max(0, waitLimit - effectiveWaitUsed),
         draftLockedSlots: draftLocks.lockedSlots,
         draftLockedWait: draftLocks.lockedWait,
       };

@@ -1,205 +1,24 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import Calendar from "react-calendar";
-import "react-calendar/dist/Calendar.css";
 import "./Users.css";
-
-function toDateKey(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function normalizeDate(date) {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function getAvailabilityBucket(day, mode = "slots") {
-  if (!day) return "unknown";
-  const capacity =
-    mode === "wait"
-      ? Number(day.waitLimit || 0)
-      : Number(day.capacitySlots || 0);
-  const remaining =
-    mode === "wait"
-      ? Math.max(
-          0,
-          Number(day.effectiveWaitRemaining ?? day.waitRemaining ?? 0),
-        )
-      : Math.max(
-          0,
-          Number(day.effectiveRemainingSlots ?? day.remainingSlots ?? 0),
-        );
-
-  if (capacity <= 0) return "0";
-
-  const ratio = remaining / capacity;
-  if (ratio >= 0.8) return "4";
-  if (ratio >= 0.6) return "3";
-  if (ratio >= 0.4) return "2";
-  if (ratio >= 0.2) return "1";
-  return "0";
-}
+import AppointmentList from "./components/users/AppointmentList";
+import CalendarSidebar from "./components/users/CalendarSidebar";
+import DailyAppointmentSearch from "./components/users/DailyAppointmentSearch";
+import DailyPrintSheet from "./components/users/DailyPrintSheet";
+import DaySummaryCard from "./components/users/DaySummaryCard";
+import {
+  getApiErrorMessage,
+  getAppointmentFormFromRecord,
+  getAppointmentStatusLabel,
+  getDefaultPartialTime,
+  getInitialAppointmentForm,
+  getMechanicAssignmentMode,
+  normalizeAppointmentStatus,
+  normalizeDate,
+  toDateKey,
+} from "./usersUtils";
 
 const LOCK_HEARTBEAT_MS = 25000;
-
-function formatPriorityTime(value) {
-  if (!value) return "N/A";
-  const [hoursPart, minutesPart] = String(value).split(":");
-  const hours = Number(hoursPart);
-  if (!Number.isFinite(hours) || !minutesPart) return String(value);
-
-  const suffix = hours >= 12 ? "PM" : "AM";
-  const displayHour = hours % 12 || 12;
-  return `${displayHour}:${minutesPart} ${suffix}`;
-}
-
-function formatPhoneNumber(value) {
-  if (!value) return "N/A";
-
-  const raw = String(value).trim();
-  if (!raw) return "N/A";
-
-  const digits = raw.replace(/\D/g, "");
-  const normalized =
-    digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
-
-  if (normalized.length !== 10) return raw;
-
-  return `(${normalized.slice(0, 3)}) ${normalized.slice(3, 6)}-${normalized.slice(6)}`;
-}
-
-function getAppointmentTypeLabel(appointment) {
-  const kind = String(appointment?.kind || "DROPOFF")
-    .trim()
-    .toUpperCase();
-  const kindLabel =
-    kind === "WAIT" ? "Wait" : kind === "DUE_BY" ? "Due by" : "Dropoff";
-  if (!["WAIT", "DUE_BY"].includes(kind)) return kindLabel;
-
-  const priority = formatPriorityTime(appointment?.priorityTime);
-  return priority === "N/A" ? kindLabel : `${kindLabel} @ ${priority}`;
-}
-
-function getApiErrorMessage(error, fallbackMessage) {
-  const details = error?.response?.data?.details;
-  if (Array.isArray(details) && details.length > 0) {
-    return details.join(" ");
-  }
-
-  return error?.response?.data?.message || fallbackMessage;
-}
-
-function getInitialAppointmentForm(scheduledDate = "") {
-  return {
-    scheduledDate,
-    lname: "",
-    vehicle: "",
-    phone: "",
-    services: "",
-    kind: "DROPOFF",
-    priorityTime: "",
-    isFirstJob: false,
-    slotsRequired: "1",
-    isCapacityOverride: false,
-    isWaitLimitOverride: false,
-  };
-}
-
-function toTimeInputValue(value) {
-  if (!value) return "";
-  const [hoursPart, minutesPart] = String(value).split(":");
-  if (!hoursPart || !minutesPart) return "";
-  return `${String(hoursPart).padStart(2, "0")}:${String(minutesPart).padStart(2, "0")}`;
-}
-
-function getMechanicAssignmentMode(mechanic) {
-  const explicitStatus = String(mechanic?.assignmentStatus || "")
-    .trim()
-    .toUpperCase();
-  if (["WORKING", "FULL_OFF", "PART_OFF"].includes(explicitStatus)) {
-    return explicitStatus;
-  }
-
-  const leaveType = String(mechanic?.leaveType || "")
-    .trim()
-    .toUpperCase();
-  if (leaveType === "FULL") return "FULL_OFF";
-  if (leaveType === "PART") return "PART_OFF";
-  return "WORKING";
-}
-
-function getDefaultPartialTime(value) {
-  return toTimeInputValue(value) || "12:00";
-}
-
-const APPOINTMENT_STATUS_STEPS = [
-  {
-    value: "WAITING_FOR_DROPOFF",
-    label: "Waiting for dropoff",
-    short: "Dropoff",
-  },
-  {
-    value: "QUEUED_FOR_TECHNICIAN",
-    label: "Queued for technician",
-    short: "Queued",
-  },
-  { value: "IN_SERVICE", label: "In service", short: "In service" },
-  { value: "READY_FOR_PICKUP", label: "Ready for pickup", short: "Ready" },
-];
-
-const APPOINTMENT_STATUS_VALUES = APPOINTMENT_STATUS_STEPS.map(
-  (step) => step.value,
-);
-const DEFAULT_APPOINTMENT_STATUS = APPOINTMENT_STATUS_STEPS[0].value;
-
-function normalizeAppointmentStatus(status) {
-  const normalized = String(status || "")
-    .trim()
-    .toUpperCase();
-  return APPOINTMENT_STATUS_VALUES.includes(normalized)
-    ? normalized
-    : DEFAULT_APPOINTMENT_STATUS;
-}
-
-function getAppointmentStatusStepIndex(status) {
-  const normalized = normalizeAppointmentStatus(status);
-  const foundIndex = APPOINTMENT_STATUS_STEPS.findIndex(
-    (step) => step.value === normalized,
-  );
-  return foundIndex >= 0 ? foundIndex : 0;
-}
-
-function getAppointmentStatusLabel(status) {
-  const normalized = normalizeAppointmentStatus(status);
-  const matched = APPOINTMENT_STATUS_STEPS.find(
-    (step) => step.value === normalized,
-  );
-  return matched ? matched.label : APPOINTMENT_STATUS_STEPS[0].label;
-}
-
-function getAppointmentFormFromRecord(appointment) {
-  const kind = appointment?.kind || "DROPOFF";
-  return {
-    scheduledDate: appointment?.scheduledDate || "",
-    lname: appointment?.lname || "",
-    vehicle: appointment?.vehicle || "",
-    phone: appointment?.phone || "",
-    services: appointment?.services || "",
-    kind,
-    priorityTime:
-      kind === "WAIT" || kind === "DUE_BY"
-        ? toTimeInputValue(appointment?.priorityTime)
-        : "",
-    isFirstJob: Number(appointment?.isFirstJob) === 1,
-    slotsRequired: String(Math.max(1, Number(appointment?.slotsRequired || 1))),
-    isCapacityOverride: Number(appointment?.isCapacityOverride) === 1,
-    isWaitLimitOverride: Number(appointment?.isWaitLimitOverride) === 1,
-  };
-}
 
 const Users = () => {
   const [selectedDate, setSelectedDate] = useState(() =>
@@ -235,6 +54,10 @@ const Users = () => {
   const [globalSearchResults, setGlobalSearchResults] = useState([]);
   const [isGlobalSearchLoading, setIsGlobalSearchLoading] = useState(false);
   const [globalSearchError, setGlobalSearchError] = useState("");
+  const [queuedVehicles, setQueuedVehicles] = useState([]);
+  const [isQueuedVehiclesLoading, setIsQueuedVehiclesLoading] = useState(false);
+  const [queuedVehiclesError, setQueuedVehiclesError] = useState("");
+  const [queuedVehiclesRefreshKey, setQueuedVehiclesRefreshKey] = useState(0);
   const [dailySearchTerm, setDailySearchTerm] = useState("");
   const [focusedAppointmentId, setFocusedAppointmentId] = useState(null);
   const [showAdvancedCreateFields, setShowAdvancedCreateFields] =
@@ -376,6 +199,7 @@ const Users = () => {
         if (Number.isInteger(appointmentId)) {
           applyAppointmentStatusLocally(appointmentId, payload.status);
         }
+        setQueuedVehiclesRefreshKey((current) => current + 1);
         return;
       }
 
@@ -444,6 +268,40 @@ const Users = () => {
       window.clearTimeout(timeoutId);
     };
   }, [globalSearchTerm]);
+
+  useEffect(() => {
+    const excludeDate = toDateKey(selectedDate);
+    let cancelled = false;
+
+    const loadQueuedVehicles = async () => {
+      setIsQueuedVehiclesLoading(true);
+      setQueuedVehiclesError("");
+      try {
+        const response = await axios.get("/appointments/queued", {
+          params: { excludeDate, limit: 80 },
+        });
+        if (cancelled) return;
+        setQueuedVehicles(response.data?.appointments || []);
+      } catch (queuedError) {
+        if (cancelled) return;
+        setQueuedVehicles([]);
+        setQueuedVehiclesError(
+          getApiErrorMessage(
+            queuedError,
+            "Could not load queued off-day vehicles.",
+          ),
+        );
+      } finally {
+        if (!cancelled) setIsQueuedVehiclesLoading(false);
+      }
+    };
+
+    void loadQueuedVehicles();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, refreshKey, queuedVehiclesRefreshKey]);
 
   useEffect(() => {
     if (!Number.isInteger(focusedAppointmentId)) return;
@@ -572,6 +430,13 @@ const Users = () => {
       handleFocusAppointment(appointment);
       const lname = String(appointment?.lname || "").trim();
       if (lname) setDailySearchTerm(lname);
+    },
+    [handleFocusAppointment],
+  );
+
+  const handleSelectQueuedVehicle = useCallback(
+    (appointment) => {
+      handleFocusAppointment(appointment);
     },
     [handleFocusAppointment],
   );
@@ -1078,240 +943,50 @@ const Users = () => {
 
   return (
     <div className="users-page">
-      <div className="sidebar">
-        <h1>Appointment Availability Calendar</h1>
-        <p className="calendar-subtitle">
-          Sundays are disabled. Past dates remain selectable so appointments can
-          be reviewed and updated. Future availability shifts from green (more
-          open slots) to red (fewer open slots).
-        </p>
-
-        <div className="search-panel">
-          <label htmlFor="global-appointment-search">
-            Search Upcoming By Last Name
-          </label>
-          <input
-            id="global-appointment-search"
-            type="search"
-            value={globalSearchTerm}
-            placeholder="Type last name..."
-            onChange={(event) => setGlobalSearchTerm(event.target.value)}
-          />
-          {globalSearchTerm.trim() ? (
-            <div className="search-results">
-              {isGlobalSearchLoading ? (
-                <p className="search-status">Searching...</p>
-              ) : globalSearchError ? (
-                <p className="search-status search-status--error">
-                  {globalSearchError}
-                </p>
-              ) : globalSearchGroups.length === 0 ? (
-                <p className="search-status">No upcoming appointments found.</p>
-              ) : (
-                <ul className="search-group-list">
-                  {globalSearchGroups.map((group) => (
-                    <li key={group.lname} className="search-group-item">
-                      <p className="search-group-title">{group.lname}</p>
-                      <ul className="search-hit-list">
-                        {group.appointments.map((appointment) => (
-                          <li key={appointment.id}>
-                            <button
-                              type="button"
-                              className="search-hit-button"
-                              onClick={() =>
-                                handleSelectGlobalSearchResult(appointment)
-                              }
-                            >
-                              <span>
-                                {new Date(
-                                  `${appointment.scheduledDate}T00:00:00`,
-                                ).toLocaleDateString()}{" "}
-                                - {getAppointmentTypeLabel(appointment)}
-                              </span>
-                              <span>{appointment.vehicle || "No vehicle"}</span>
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="calendar-legend">
-          <span className="legend-item legend-high">High availability</span>
-          <span className="legend-item legend-medium">Medium</span>
-          <span className="legend-item legend-low">Low / Full</span>
-        </div>
-
-        {error ? (
-          <p className="calendar-status calendar-error">{error}</p>
-        ) : (
-          <p className="calendar-status calendar-loading">
-            {isLoading ? "Loading availability..." : " "}
-          </p>
-        )}
-
-        <div className="availability-mode-toggle" role="radiogroup">
-          <label
-            className={`availability-mode-option ${
-              !isWaitMode ? "availability-mode-option--active" : ""
-            }`}
-          >
-            <input
-              type="radio"
-              name="availabilityMode"
-              checked={!isWaitMode}
-              onChange={() => setAvailabilityMode("slots")}
-            />
-            Total slots
-          </label>
-          <label
-            className={`availability-mode-option ${
-              isWaitMode ? "availability-mode-option--active" : ""
-            }`}
-          >
-            <input
-              type="radio"
-              name="availabilityMode"
-              checked={isWaitMode}
-              onChange={() => setAvailabilityMode("wait")}
-            />
-            Waiters
-          </label>
-        </div>
-        <p className="availability-mode-caption">
-          Showing{" "}
-          {isWaitMode
-            ? "wait/due-by spots remaining on each day."
-            : "total appointment slots remaining on each day."}
-        </p>
-
-        <Calendar
-          className="availability-calendar"
-          value={selectedDate}
-          calendarType="gregory"
-          onChange={(value) => {
-            const nextDate = Array.isArray(value) ? value[0] : value;
-            if (nextDate) setSelectedDate(normalizeDate(nextDate));
-          }}
-          onActiveStartDateChange={({
-            activeStartDate: nextStartDate,
-            view,
-          }) => {
-            if (view === "month" && nextStartDate) {
-              setActiveStartDate(normalizeDate(nextStartDate));
-            }
-          }}
-          tileDisabled={({ date, view }) =>
-            view === "month" && isCalendarDisabledDay(date)
-          }
-          tileClassName={({ date, view }) => {
-            if (view !== "month") return null;
-            if (isPastOrSunday(date))
-              return "calendar-tile calendar-tile--past";
-
-            const day = availabilityByDate[toDateKey(date)];
-            const bucket = getAvailabilityBucket(
-              day,
-              isWaitMode ? "wait" : "slots",
-            );
-            return `calendar-tile calendar-tile--availability-${bucket}`;
-          }}
-          tileContent={({ date, view }) => {
-            if (view !== "month" || isPastOrSunday(date)) return null;
-            const day = availabilityByDate[toDateKey(date)];
-            if (!day) return null;
-
-            const remaining = isWaitMode
-              ? Math.max(
-                  0,
-                  Number(day.effectiveWaitRemaining ?? day.waitRemaining ?? 0),
-                )
-              : Math.max(
-                  0,
-                  Number(
-                    day.effectiveRemainingSlots ?? day.remainingSlots ?? 0,
-                  ),
-                );
-            return (
-              <span className="calendar-openings">
-                {remaining} {isWaitMode ? "wait open" : "open"}
-              </span>
-            );
-          }}
-        />
-      </div>
+      <CalendarSidebar
+        selectedDate={selectedDate}
+        setSelectedDate={setSelectedDate}
+        setActiveStartDate={setActiveStartDate}
+        availabilityByDate={availabilityByDate}
+        isWaitMode={isWaitMode}
+        setAvailabilityMode={setAvailabilityMode}
+        error={error}
+        isLoading={isLoading}
+        isPastOrSunday={isPastOrSunday}
+        isCalendarDisabledDay={isCalendarDisabledDay}
+        globalSearchTerm={globalSearchTerm}
+        setGlobalSearchTerm={setGlobalSearchTerm}
+        isGlobalSearchLoading={isGlobalSearchLoading}
+        globalSearchError={globalSearchError}
+        globalSearchGroups={globalSearchGroups}
+        onSelectGlobalSearchResult={handleSelectGlobalSearchResult}
+        queuedVehicles={queuedVehicles}
+        isQueuedVehiclesLoading={isQueuedVehiclesLoading}
+        queuedVehiclesError={queuedVehiclesError}
+        onSelectQueuedVehicle={handleSelectQueuedVehicle}
+      />
       <div className="day-details-pane">
         {selectedDayData && !selectedDateIsSunday ? (
-          <div className="selected-day-summary">
-            <div className="selected-day-summary-header">
-              <h2>{selectedDateLongLabel}</h2>
-              <div className="selected-day-summary-actions">
-                <button
-                  type="button"
-                  className="summary-action-button"
-                  onClick={() => {
-                    if (isMechanicsModalOpen) {
-                      closeMechanicsModal();
-                    } else {
-                      openMechanicsModal();
-                    }
-                  }}
-                >
-                  {isMechanicsModalOpen ? "Close mechanics" : "Edit mechanics"}
-                </button>
-                <button
-                  type="button"
-                  className="summary-action-button summary-action-button--print"
-                  onClick={handlePrintDailyAppointments}
-                >
-                  Print day
-                </button>
-                {canCreateForSelectedDate || isEditingAppointment ? (
-                  <button
-                    type="button"
-                    className="summary-action-button"
-                    onClick={() => {
-                      if (isCreateFormOpen) {
-                        closeAppointmentForm();
-                      } else {
-                        openNewAppointmentForm();
-                      }
-                    }}
-                  >
-                    {isCreateFormOpen
-                      ? isEditingAppointment
-                        ? "Cancel edit"
-                        : "Cancel"
-                      : "New appointment"}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            {createSuccess ? (
-              <p className="create-status create-status-success">
-                {createSuccess}
-              </p>
-            ) : null}
-            <p>{selectedRemaining} appointment slot(s) available</p>
-            <p>
-              {selectedUsed} used / {selectedCapacity} total capacity
-            </p>
-            <p>
-              {selectedWaitUsed} used / {selectedWaitLimit} waiters allowed (
-              {selectedWaitRemaining} open)
-            </p>
-            {Number(selectedDayData?.draftLockCount || 0) > 0 ? (
-              <p>
-                {Number(selectedDayData?.draftLockCount || 0)} temporary hold(s)
-                active
-              </p>
-            ) : null}
-          </div>
+          <DaySummaryCard
+            selectedDayData={selectedDayData}
+            selectedDateLongLabel={selectedDateLongLabel}
+            isMechanicsModalOpen={isMechanicsModalOpen}
+            closeMechanicsModal={closeMechanicsModal}
+            openMechanicsModal={openMechanicsModal}
+            handlePrintDailyAppointments={handlePrintDailyAppointments}
+            canCreateForSelectedDate={canCreateForSelectedDate}
+            isEditingAppointment={isEditingAppointment}
+            isCreateFormOpen={isCreateFormOpen}
+            closeAppointmentForm={closeAppointmentForm}
+            openNewAppointmentForm={openNewAppointmentForm}
+            createSuccess={createSuccess}
+            selectedRemaining={selectedRemaining}
+            selectedUsed={selectedUsed}
+            selectedCapacity={selectedCapacity}
+            selectedWaitUsed={selectedWaitUsed}
+            selectedWaitLimit={selectedWaitLimit}
+            selectedWaitRemaining={selectedWaitRemaining}
+          />
         ) : null}
 
         {isCreateFormOpen && !selectedDateIsSunday ? (
@@ -1579,274 +1254,37 @@ const Users = () => {
         {!selectedDateIsSunday ? (
           <div className="selected-day-appointments">
             <h3>Appointments for {selectedDateShortLabel}</h3>
-            <div className="search-panel search-panel--daily">
-              <label htmlFor="daily-appointment-search">
-                Search This Day By Last Name
-              </label>
-              <input
-                id="daily-appointment-search"
-                type="search"
-                value={dailySearchTerm}
-                placeholder="Type last name..."
-                onChange={(event) => setDailySearchTerm(event.target.value)}
-              />
-              {isDailySearchActive ? (
-                <div className="search-results">
-                  {dailySearchMatches.length === 0 ? (
-                    <p className="search-status">No matches on this day.</p>
-                  ) : (
-                    <ul className="search-hit-list">
-                      {dailySearchMatches.map((appointment) => (
-                        <li key={appointment.id}>
-                          <button
-                            type="button"
-                            className="search-hit-button"
-                            onClick={() =>
-                              handleSelectDailySearchResult(appointment)
-                            }
-                          >
-                            <span>
-                              {appointment.lname || "No Name"} -{" "}
-                              {getAppointmentTypeLabel(appointment)}
-                            </span>
-                            <span>{appointment.vehicle || "No vehicle"}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              ) : null}
-            </div>
+            <DailyAppointmentSearch
+              dailySearchTerm={dailySearchTerm}
+              setDailySearchTerm={setDailySearchTerm}
+              isDailySearchActive={isDailySearchActive}
+              dailySearchMatches={dailySearchMatches}
+              onSelectDailySearchResult={handleSelectDailySearchResult}
+            />
 
-            {dayError ? (
-              <p className="day-details-status day-details-error">{dayError}</p>
-            ) : isDayLoading ? (
-              <p className="day-details-status day-details-loading">
-                Loading appointments...
-              </p>
-            ) : printAppointments.length === 0 ? (
-              <p className="day-details-status day-details-empty">
-                No appointments scheduled for this day.
-              </p>
-            ) : (
-              <ul className="appointment-list">
-                {printAppointments.map((appointment) => {
-                  const appointmentId = Number(appointment.id);
-                  const kind = appointment.kind || "DROPOFF";
-                  const isFirstJob = Number(appointment.isFirstJob) === 1;
-                  const isCapacityOverride =
-                    Number(appointment.isCapacityOverride) === 1;
-                  const isWaitOverride =
-                    Number(appointment.isWaitLimitOverride) === 1;
-                  const appointmentStatus = normalizeAppointmentStatus(
-                    appointment.status,
-                  );
-                  const isReadyForPickup =
-                    appointmentStatus === "READY_FOR_PICKUP";
-                  const lnameMatchesDailySearch =
-                    !isDailySearchActive ||
-                    String(appointment.lname || "")
-                      .trim()
-                      .toLowerCase()
-                      .includes(normalizedDailySearchTerm);
-                  const isDimmedByDailySearch =
-                    isDailySearchActive && !lnameMatchesDailySearch;
-                  const isAppointmentFocused =
-                    focusedAppointmentId === appointmentId;
-                  const statusIndex =
-                    getAppointmentStatusStepIndex(appointmentStatus);
-                  const statusProgressPercent =
-                    APPOINTMENT_STATUS_STEPS.length <= 1
-                      ? 0
-                      : (statusIndex / (APPOINTMENT_STATUS_STEPS.length - 1)) *
-                        100;
-                  const isStatusUpdating =
-                    statusUpdatingAppointmentId === appointmentId;
-                  const isAppointmentBusy =
-                    isStatusUpdating || deletingAppointmentId === appointmentId;
-
-                  return (
-                    <li
-                      key={appointment.id}
-                      className={`appointment-item ${
-                        isReadyForPickup ? "appointment-item--ready" : ""
-                      } ${isDimmedByDailySearch ? "appointment-item--dimmed" : ""} ${
-                        isAppointmentFocused ? "appointment-item--focused" : ""
-                      }`}
-                      data-appointment-id={appointmentId}
-                    >
-                      <div className="appointment-header">
-                        <h4>{appointment.lname || "No Name"}</h4>
-                        {isFirstJob ? (
-                          <span
-                            className={`appointment-kind appointment-kind--wait`}
-                          >
-                            First Job
-                          </span>
-                        ) : (
-                          <span
-                            className={`appointment-kind appointment-kind--${String(
-                              kind,
-                            ).toLowerCase()}`}
-                          >
-                            {kind}{" "}
-                            {formatPriorityTime(appointment.priorityTime) ===
-                            "N/A" ? (
-                              ""
-                            ) : (
-                              <>
-                                @ {formatPriorityTime(appointment.priorityTime)}
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </div>
-
-                      <p>
-                        <strong>Vehicle:</strong> {appointment.vehicle || "N/A"}
-                      </p>
-                      <p>
-                        <strong>Phone:</strong>{" "}
-                        {formatPhoneNumber(appointment.phone)}
-                      </p>
-                      <p>
-                        <strong>Services:</strong>{" "}
-                        {appointment.services || "N/A"}
-                      </p>
-                      <div className="appointment-status-section">
-                        <p className="appointment-status-current">
-                          <strong>Status:</strong>{" "}
-                          {getAppointmentStatusLabel(appointmentStatus)}
-                          {isStatusUpdating ? " (Saving...)" : ""}
-                        </p>
-                        <div
-                          className="appointment-status-progress"
-                          role="progressbar"
-                          aria-valuemin={0}
-                          aria-valuemax={APPOINTMENT_STATUS_STEPS.length - 1}
-                          aria-valuenow={statusIndex}
-                          aria-label={`Status for appointment ${appointmentId}`}
-                        >
-                          <span
-                            className="appointment-status-progress-fill"
-                            style={{ width: `${statusProgressPercent}%` }}
-                          />
-                        </div>
-                        <div className="appointment-status-steps">
-                          {APPOINTMENT_STATUS_STEPS.map(
-                            (statusStep, stepIndex) => {
-                              const isReached = stepIndex <= statusIndex;
-                              const isCurrent =
-                                statusStep.value === appointmentStatus;
-                              return (
-                                <button
-                                  key={statusStep.value}
-                                  type="button"
-                                  className={`appointment-status-step ${
-                                    isReached
-                                      ? "appointment-status-step--reached"
-                                      : ""
-                                  } ${
-                                    isCurrent
-                                      ? "appointment-status-step--active"
-                                      : ""
-                                  }`}
-                                  disabled={isAppointmentBusy}
-                                  onClick={() =>
-                                    handleUpdateAppointmentStatus(
-                                      appointment,
-                                      statusStep.value,
-                                    )
-                                  }
-                                >
-                                  {statusStep.short}
-                                </button>
-                              );
-                            },
-                          )}
-                        </div>
-                      </div>
-                      {appointment.slotsRequired === 1 ? (
-                        ""
-                      ) : (
-                        <p>
-                          <strong>Slots:</strong>{" "}
-                          {Math.max(0, Number(appointment.slotsRequired || 0))}
-                          {isCapacityOverride ? " | Capacity override" : ""}
-                          {isWaitOverride ? " | Wait override" : ""}
-                        </p>
-                      )}
-                      <div className="appointment-item-actions">
-                        <button
-                          type="button"
-                          className="appointment-item-action-button"
-                          data-type="edit"
-                          disabled={isAppointmentBusy}
-                          onClick={() => loadAppointmentIntoForm(appointment)}
-                        >
-                          ✎
-                        </button>
-                        <button
-                          type="button"
-                          className="appointment-item-action-button"
-                          data-type="delete"
-                          disabled={isAppointmentBusy}
-                          onClick={() => handleDeleteAppointment(appointment)}
-                        >
-                          {deletingAppointmentId === appointmentId
-                            ? "Deleting..."
-                            : "🗙"}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            <AppointmentList
+              dayError={dayError}
+              isDayLoading={isDayLoading}
+              appointments={printAppointments}
+              isDailySearchActive={isDailySearchActive}
+              normalizedDailySearchTerm={normalizedDailySearchTerm}
+              focusedAppointmentId={focusedAppointmentId}
+              statusUpdatingAppointmentId={statusUpdatingAppointmentId}
+              deletingAppointmentId={deletingAppointmentId}
+              onStatusUpdate={handleUpdateAppointmentStatus}
+              onEdit={loadAppointmentIntoForm}
+              onDelete={handleDeleteAppointment}
+            />
           </div>
         ) : null}
 
         {!selectedDateIsSunday ? (
-          <section className="daily-print-sheet" aria-hidden="true">
-            <header className="daily-print-header">
-              <h1>Daily Appointments</h1>
-              <p>{selectedDateLongLabel}</p>
-            </header>
-
-            {dayError ? (
-              <p className="daily-print-empty">{dayError}</p>
-            ) : isDayLoading ? (
-              <p className="daily-print-empty">Loading appointments...</p>
-            ) : printAppointments.length === 0 ? (
-              <p className="daily-print-empty">
-                No appointments scheduled for this day.
-              </p>
-            ) : (
-              <table className="daily-print-table">
-                <thead>
-                  <tr>
-                    <th>Appointment Type</th>
-                    <th>Last Name</th>
-                    <th>Vehicle</th>
-                    <th>Service / Reason</th>
-                    <th>Phone</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {printAppointments.map((appointment) => (
-                    <tr key={appointment.id}>
-                      <td>{getAppointmentTypeLabel(appointment)}</td>
-                      <td>{appointment.lname || "No Name"}</td>
-                      <td>{appointment.vehicle || "N/A"}</td>
-                      <td>{appointment.services || "N/A"}</td>
-                      <td>{formatPhoneNumber(appointment.phone)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </section>
+          <DailyPrintSheet
+            dayError={dayError}
+            isDayLoading={isDayLoading}
+            printAppointments={printAppointments}
+            selectedDateLongLabel={selectedDateLongLabel}
+          />
         ) : null}
 
         {isMechanicsModalOpen ? (
@@ -2000,3 +1438,4 @@ const Users = () => {
 };
 
 export default Users;
+
