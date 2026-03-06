@@ -6,6 +6,7 @@
  *  - GET  /schedule/day/mechanics?date=YYYY-MM-DD
  *  - PUT  /schedule/day/mechanics?date=YYYY-MM-DD
  *  - GET  /schedule/day?date=YYYY-MM-DD
+ *  - GET  /appointments/search?q=lastname
  *  - GET  /appointments/:id
  *  - POST /appointments
  *  - PUT  /appointments/:id
@@ -754,6 +755,61 @@ async function getDaySummary(
     draftLockedSlots: draftLocks.lockedSlots,
     draftLockedWait: draftLocks.lockedWait,
   };
+}
+
+async function normalizeCapacityOverridesForDate(dateStr, conn) {
+  const cap = await getCapacityMeta(dateStr, conn);
+  const capacitySlots = Number(cap.capacitySlots || 0);
+  if (capacitySlots <= 0) return [];
+
+  const [[nonOverrideAgg]] = await conn.query(
+    `
+    SELECT
+      COALESCE(SUM(slotsRequired), 0) AS usedSlots
+    FROM appointments
+    WHERE scheduledDate = ?
+      AND isCapacityOverride = 0
+    `,
+    [dateStr],
+  );
+
+  let availableSlots = capacitySlots - Number(nonOverrideAgg.usedSlots || 0);
+  if (availableSlots <= 0) return [];
+
+  const [overrideRows] = await conn.query(
+    `
+    SELECT id, slotsRequired
+    FROM appointments
+    WHERE scheduledDate = ?
+      AND isCapacityOverride = 1
+    ORDER BY slotsRequired ASC, id ASC
+    `,
+    [dateStr],
+  );
+
+  if (overrideRows.length === 0) return [];
+
+  const idsToNormalize = [];
+  for (const row of overrideRows) {
+    if (availableSlots <= 0) break;
+    const slotsRequired = Math.max(1, Number(row.slotsRequired || 1));
+    idsToNormalize.push(Number(row.id));
+    availableSlots -= slotsRequired;
+  }
+
+  if (idsToNormalize.length === 0) return [];
+
+  const placeholders = idsToNormalize.map(() => "?").join(", ");
+  await conn.query(
+    `
+    UPDATE appointments
+    SET isCapacityOverride = 0
+    WHERE id IN (${placeholders})
+    `,
+    idsToNormalize,
+  );
+
+  return idsToNormalize;
 }
 
 // Ensure a scheduleDay row exists (for locking)
@@ -1540,6 +1596,71 @@ app.get("/schedule/day", async (req, res) => {
 // Appointment CRUD
 // -----------------------
 
+// GET /appointments/search?q=lastname&limit=50
+app.get("/appointments/search", async (req, res) => {
+  try {
+    const query = String(req.query.q || "").trim();
+    const parsedLimit = Number(req.query.limit);
+    const limit = Math.max(
+      1,
+      Math.min(
+        200,
+        Number.isFinite(parsedLimit) ? Math.trunc(parsedLimit) : 50,
+      ),
+    );
+
+    if (!query) {
+      return res.json({
+        query: "",
+        dateFrom: toDateOnlyString(new Date()),
+        appointments: [],
+      });
+    }
+
+    const dateFrom = toDateOnlyString(new Date()) || "1970-01-01";
+    const [rows] = await db.query(
+      `
+      SELECT
+        id,
+        scheduledDate,
+        lname,
+        vehicle,
+        phone,
+        services,
+        kind,
+        status,
+        priorityTime,
+        isFirstJob,
+        slotsRequired,
+        isCapacityOverride,
+        isWaitLimitOverride
+      FROM appointments
+      WHERE scheduledDate >= ?
+        AND LOWER(lname) LIKE ?
+      ORDER BY lname ASC, scheduledDate ASC, priorityTime IS NULL, priorityTime ASC, id ASC
+      LIMIT ?
+      `,
+      [dateFrom, `%${query.toLowerCase()}%`, limit],
+    );
+
+    const appointments = rows.map((row) => {
+      const normalizedDate = toDateOnlyString(row.scheduledDate);
+      return {
+        ...row,
+        scheduledDate: normalizedDate || row.scheduledDate,
+      };
+    });
+
+    res.json({
+      query,
+      dateFrom,
+      appointments,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "SERVER_ERROR", message: err.message });
+  }
+});
+
 // GET /appointments/:id
 app.get("/appointments/:id", async (req, res) => {
   try {
@@ -1733,6 +1854,10 @@ app.put("/appointments/:id", async (req, res) => {
         .json({ error: "NOT_FOUND", message: "Appointment not found" });
     }
 
+    const requestKeys = Object.keys(req.body || {});
+    const isStatusOnlyUpdateRequest =
+      requestKeys.length === 1 && requestKeys[0] === "status";
+
     // Build updated record (merge existing + body)
     const updated = {
       scheduledDate: req.body.scheduledDate ?? existing.scheduledDate,
@@ -1921,14 +2046,30 @@ app.put("/appointments/:id", async (req, res) => {
       ],
     );
 
+    if (oldDate !== newDate) {
+      await normalizeCapacityOverridesForDate(oldDate, conn);
+    }
+
     // Summaries after update (for UI refresh)
     const summaryAfter = await getDaySummary(updated.scheduledDate, conn);
 
     await conn.commit();
-    broadcastScheduleChanged({
-      dates: [oldDate, updated.scheduledDate],
-      reason: "appointment_updated",
-    });
+    if (isStatusOnlyUpdateRequest) {
+      broadcastScheduleChanged({
+        dates: [updated.scheduledDate],
+        reason: "appointment_status_updated",
+        extra: {
+          appointmentId: id,
+          date: updated.scheduledDate,
+          status: updated.status,
+        },
+      });
+    } else {
+      broadcastScheduleChanged({
+        dates: [oldDate, updated.scheduledDate],
+        reason: "appointment_updated",
+      });
+    }
 
     const appt = await getAppointmentById(id, db);
     res.json({ appointment: appt, summary: summaryAfter });
@@ -1969,6 +2110,7 @@ app.delete("/appointments/:id", async (req, res) => {
     await lockScheduleDay(dateStr, conn);
 
     await conn.query(`DELETE FROM appointments WHERE id = ?`, [id]);
+    await normalizeCapacityOverridesForDate(dateStr, conn);
 
     const summaryAfter = await getDaySummary(dateStr, conn);
 

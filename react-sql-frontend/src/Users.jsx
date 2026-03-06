@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
@@ -231,6 +231,12 @@ const Users = () => {
   const [isMechanicsLoading, setIsMechanicsLoading] = useState(false);
   const [isMechanicsSaving, setIsMechanicsSaving] = useState(false);
   const [mechanicsError, setMechanicsError] = useState("");
+  const [globalSearchTerm, setGlobalSearchTerm] = useState("");
+  const [globalSearchResults, setGlobalSearchResults] = useState([]);
+  const [isGlobalSearchLoading, setIsGlobalSearchLoading] = useState(false);
+  const [globalSearchError, setGlobalSearchError] = useState("");
+  const [dailySearchTerm, setDailySearchTerm] = useState("");
+  const [focusedAppointmentId, setFocusedAppointmentId] = useState(null);
   const [showAdvancedCreateFields, setShowAdvancedCreateFields] =
     useState(false);
   const [newAppointment, setNewAppointment] = useState(() =>
@@ -244,6 +250,37 @@ const Users = () => {
   const isSunday = (date) => normalizeDate(date).getDay() === 0;
   const isCalendarDisabledDay = (date) => isSunday(date);
   const isPastOrSunday = (date) => isPastDay(date) || isSunday(date);
+
+  const applyAppointmentStatusLocally = useCallback(
+    (appointmentId, nextStatus) => {
+      const normalizedStatus = normalizeAppointmentStatus(nextStatus);
+      setDayDetails((current) => {
+        if (!current || !Array.isArray(current.appointments)) return current;
+
+        let changed = false;
+        const nextAppointments = current.appointments.map((appointment) => {
+          if (Number(appointment?.id) !== appointmentId) return appointment;
+          if (
+            normalizeAppointmentStatus(appointment?.status) === normalizedStatus
+          )
+            return appointment;
+
+          changed = true;
+          return {
+            ...appointment,
+            status: normalizedStatus,
+          };
+        });
+
+        if (!changed) return current;
+        return {
+          ...current,
+          appointments: nextAppointments,
+        };
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const loadMonthAvailability = async () => {
@@ -326,7 +363,22 @@ const Users = () => {
 
   useEffect(() => {
     const source = new EventSource("/realtime/schedule");
-    const handleScheduleChange = () => {
+    const handleScheduleChange = (event) => {
+      let payload = null;
+      try {
+        payload = JSON.parse(event?.data || "{}");
+      } catch {
+        payload = null;
+      }
+
+      if (payload?.reason === "appointment_status_updated") {
+        const appointmentId = Number(payload.appointmentId);
+        if (Number.isInteger(appointmentId)) {
+          applyAppointmentStatusLocally(appointmentId, payload.status);
+        }
+        return;
+      }
+
       setRefreshKey((current) => current + 1);
     };
 
@@ -337,7 +389,7 @@ const Users = () => {
       source.removeEventListener("schedule.changed", handleScheduleChange);
       source.close();
     };
-  }, []);
+  }, [applyAppointmentStatusLocally]);
 
   useEffect(() => {
     setIsCreateFormOpen(false);
@@ -352,9 +404,66 @@ const Users = () => {
     setIsMechanicsLoading(false);
     setIsMechanicsSaving(false);
     setMechanicsError("");
+    setDailySearchTerm("");
     setShowAdvancedCreateFields(false);
     setNewAppointment(getInitialAppointmentForm(toDateKey(selectedDate)));
   }, [selectedDate]);
+
+  useEffect(() => {
+    const query = globalSearchTerm.trim();
+    if (!query) {
+      setGlobalSearchResults([]);
+      setGlobalSearchError("");
+      setIsGlobalSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(async () => {
+      setIsGlobalSearchLoading(true);
+      setGlobalSearchError("");
+      try {
+        const response = await axios.get("/appointments/search", {
+          params: { q: query, limit: 120 },
+        });
+        if (cancelled) return;
+        setGlobalSearchResults(response.data?.appointments || []);
+      } catch (searchError) {
+        if (cancelled) return;
+        setGlobalSearchResults([]);
+        setGlobalSearchError(
+          getApiErrorMessage(searchError, "Could not search appointments."),
+        );
+      } finally {
+        if (!cancelled) setIsGlobalSearchLoading(false);
+      }
+    }, 180);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [globalSearchTerm]);
+
+  useEffect(() => {
+    if (!Number.isInteger(focusedAppointmentId)) return;
+
+    const target = document.querySelector(
+      `[data-appointment-id="${focusedAppointmentId}"]`,
+    );
+    if (!target) return;
+
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    const timeoutId = window.setTimeout(() => {
+      setFocusedAppointmentId((current) =>
+        current === focusedAppointmentId ? null : current,
+      );
+    }, 6000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [focusedAppointmentId, dayDetails]);
 
   const selectedDayData =
     dayDetails?.summary || availabilityByDate[toDateKey(selectedDate)];
@@ -415,6 +524,56 @@ const Users = () => {
       newAppointment.slotsRequired,
       selectedDate,
     ],
+  );
+  const normalizedDailySearchTerm = dailySearchTerm.trim().toLowerCase();
+  const isDailySearchActive = normalizedDailySearchTerm.length > 0;
+  const globalSearchGroups = useMemo(() => {
+    const byLastName = new Map();
+    for (const appointment of globalSearchResults) {
+      const lname = String(appointment?.lname || "No Name").trim() || "No Name";
+      if (!byLastName.has(lname)) {
+        byLastName.set(lname, []);
+      }
+      byLastName.get(lname).push(appointment);
+    }
+
+    return Array.from(byLastName.entries()).map(([lname, appointments]) => ({
+      lname,
+      appointments,
+    }));
+  }, [globalSearchResults]);
+
+  const handleFocusAppointment = useCallback((appointment) => {
+    const appointmentId = Number(appointment?.id);
+    if (!Number.isInteger(appointmentId)) return;
+
+    const nextDate = normalizeDate(
+      new Date(`${String(appointment?.scheduledDate || "")}T00:00:00`),
+    );
+    if (Number.isFinite(nextDate.getTime())) {
+      setSelectedDate(nextDate);
+    }
+
+    setFocusedAppointmentId(appointmentId);
+  }, []);
+
+  const handleSelectGlobalSearchResult = useCallback(
+    (appointment) => {
+      handleFocusAppointment(appointment);
+      setGlobalSearchTerm("");
+      setGlobalSearchResults([]);
+      setGlobalSearchError("");
+    },
+    [handleFocusAppointment],
+  );
+
+  const handleSelectDailySearchResult = useCallback(
+    (appointment) => {
+      handleFocusAppointment(appointment);
+      const lname = String(appointment?.lname || "").trim();
+      if (lname) setDailySearchTerm(lname);
+    },
+    [handleFocusAppointment],
   );
 
   const resetCreateForm = () => {
@@ -754,6 +913,7 @@ const Users = () => {
     setStatusUpdatingAppointmentId(appointmentId);
     setCreateError("");
     setCreateSuccess("");
+    applyAppointmentStatusLocally(appointmentId, normalizedNextStatus);
 
     try {
       await axios.put(`/appointments/${appointmentId}`, {
@@ -762,8 +922,8 @@ const Users = () => {
       setCreateSuccess(
         `Status updated: ${getAppointmentStatusLabel(normalizedNextStatus)}.`,
       );
-      setRefreshKey((current) => current + 1);
     } catch (statusUpdateError) {
+      applyAppointmentStatusLocally(appointmentId, currentStatus);
       setCreateError(
         getApiErrorMessage(
           statusUpdateError,
@@ -867,7 +1027,54 @@ const Users = () => {
     void axios.delete(`/appointment-locks/${tokenToRelease}`).catch(() => {});
   }, [createLock?.token, shouldManageCreateLock]);
 
-  const printAppointments = selectedAppointments;
+  const printAppointments = useMemo(() => {
+    if (!Array.isArray(selectedAppointments) || selectedAppointments.length < 2)
+      return selectedAppointments;
+
+    const getKindRank = (appointment) => {
+      const kind = String(appointment?.kind || "DROPOFF")
+        .trim()
+        .toUpperCase();
+      if (kind === "WAIT") return 0;
+      if (kind === "DUE_BY") return 1;
+      return 2;
+    };
+
+    return [...selectedAppointments].sort((left, right) => {
+      const leftIsReady =
+        normalizeAppointmentStatus(left?.status) === "READY_FOR_PICKUP";
+      const rightIsReady =
+        normalizeAppointmentStatus(right?.status) === "READY_FOR_PICKUP";
+      if (leftIsReady !== rightIsReady) return leftIsReady ? 1 : -1;
+
+      const leftKindRank = getKindRank(left);
+      const rightKindRank = getKindRank(right);
+      if (leftKindRank !== rightKindRank) {
+        return leftKindRank - rightKindRank;
+      }
+
+      if (leftKindRank === 2) {
+        const leftName = String(left?.lname || "").trim();
+        const rightName = String(right?.lname || "").trim();
+        const nameCompare = leftName.localeCompare(rightName, undefined, {
+          sensitivity: "base",
+        });
+        if (nameCompare !== 0) return nameCompare;
+      }
+
+      return Number(left?.id || 0) - Number(right?.id || 0);
+    });
+  }, [selectedAppointments]);
+  const dailySearchMatches = useMemo(() => {
+    if (!isDailySearchActive) return [];
+
+    return printAppointments.filter((appointment) =>
+      String(appointment?.lname || "")
+        .trim()
+        .toLowerCase()
+        .includes(normalizedDailySearchTerm),
+    );
+  }, [isDailySearchActive, normalizedDailySearchTerm, printAppointments]);
 
   return (
     <div className="users-page">
@@ -878,6 +1085,61 @@ const Users = () => {
           be reviewed and updated. Future availability shifts from green (more
           open slots) to red (fewer open slots).
         </p>
+
+        <div className="search-panel">
+          <label htmlFor="global-appointment-search">
+            Search Upcoming By Last Name
+          </label>
+          <input
+            id="global-appointment-search"
+            type="search"
+            value={globalSearchTerm}
+            placeholder="Type last name..."
+            onChange={(event) => setGlobalSearchTerm(event.target.value)}
+          />
+          {globalSearchTerm.trim() ? (
+            <div className="search-results">
+              {isGlobalSearchLoading ? (
+                <p className="search-status">Searching...</p>
+              ) : globalSearchError ? (
+                <p className="search-status search-status--error">
+                  {globalSearchError}
+                </p>
+              ) : globalSearchGroups.length === 0 ? (
+                <p className="search-status">No upcoming appointments found.</p>
+              ) : (
+                <ul className="search-group-list">
+                  {globalSearchGroups.map((group) => (
+                    <li key={group.lname} className="search-group-item">
+                      <p className="search-group-title">{group.lname}</p>
+                      <ul className="search-hit-list">
+                        {group.appointments.map((appointment) => (
+                          <li key={appointment.id}>
+                            <button
+                              type="button"
+                              className="search-hit-button"
+                              onClick={() =>
+                                handleSelectGlobalSearchResult(appointment)
+                              }
+                            >
+                              <span>
+                                {new Date(
+                                  `${appointment.scheduledDate}T00:00:00`,
+                                ).toLocaleDateString()}{" "}
+                                - {getAppointmentTypeLabel(appointment)}
+                              </span>
+                              <span>{appointment.vehicle || "No vehicle"}</span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </div>
 
         <div className="calendar-legend">
           <span className="legend-item legend-high">High availability</span>
@@ -1317,6 +1579,45 @@ const Users = () => {
         {!selectedDateIsSunday ? (
           <div className="selected-day-appointments">
             <h3>Appointments for {selectedDateShortLabel}</h3>
+            <div className="search-panel search-panel--daily">
+              <label htmlFor="daily-appointment-search">
+                Search This Day By Last Name
+              </label>
+              <input
+                id="daily-appointment-search"
+                type="search"
+                value={dailySearchTerm}
+                placeholder="Type last name..."
+                onChange={(event) => setDailySearchTerm(event.target.value)}
+              />
+              {isDailySearchActive ? (
+                <div className="search-results">
+                  {dailySearchMatches.length === 0 ? (
+                    <p className="search-status">No matches on this day.</p>
+                  ) : (
+                    <ul className="search-hit-list">
+                      {dailySearchMatches.map((appointment) => (
+                        <li key={appointment.id}>
+                          <button
+                            type="button"
+                            className="search-hit-button"
+                            onClick={() =>
+                              handleSelectDailySearchResult(appointment)
+                            }
+                          >
+                            <span>
+                              {appointment.lname || "No Name"} -{" "}
+                              {getAppointmentTypeLabel(appointment)}
+                            </span>
+                            <span>{appointment.vehicle || "No vehicle"}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+            </div>
 
             {dayError ? (
               <p className="day-details-status day-details-error">{dayError}</p>
@@ -1324,7 +1625,7 @@ const Users = () => {
               <p className="day-details-status day-details-loading">
                 Loading appointments...
               </p>
-            ) : selectedAppointments.length === 0 ? (
+            ) : printAppointments.length === 0 ? (
               <p className="day-details-status day-details-empty">
                 No appointments scheduled for this day.
               </p>
@@ -1341,6 +1642,18 @@ const Users = () => {
                   const appointmentStatus = normalizeAppointmentStatus(
                     appointment.status,
                   );
+                  const isReadyForPickup =
+                    appointmentStatus === "READY_FOR_PICKUP";
+                  const lnameMatchesDailySearch =
+                    !isDailySearchActive ||
+                    String(appointment.lname || "")
+                      .trim()
+                      .toLowerCase()
+                      .includes(normalizedDailySearchTerm);
+                  const isDimmedByDailySearch =
+                    isDailySearchActive && !lnameMatchesDailySearch;
+                  const isAppointmentFocused =
+                    focusedAppointmentId === appointmentId;
                   const statusIndex =
                     getAppointmentStatusStepIndex(appointmentStatus);
                   const statusProgressPercent =
@@ -1354,7 +1667,15 @@ const Users = () => {
                     isStatusUpdating || deletingAppointmentId === appointmentId;
 
                   return (
-                    <li key={appointment.id} className="appointment-item">
+                    <li
+                      key={appointment.id}
+                      className={`appointment-item ${
+                        isReadyForPickup ? "appointment-item--ready" : ""
+                      } ${isDimmedByDailySearch ? "appointment-item--dimmed" : ""} ${
+                        isAppointmentFocused ? "appointment-item--focused" : ""
+                      }`}
+                      data-appointment-id={appointmentId}
+                    >
                       <div className="appointment-header">
                         <h4>{appointment.lname || "No Name"}</h4>
                         {isFirstJob ? (

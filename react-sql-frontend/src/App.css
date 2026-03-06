@@ -47,7 +47,7 @@
 
 @media (prefers-color-scheme: light) {
   :root {
-    --background: #c0c0c0;
+    --background: #e4e4e4;
     --foreground: #121212;
 
     --primary-background: hsl(0, 0%, 82%);

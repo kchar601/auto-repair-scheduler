@@ -30,6 +30,93 @@
   color: var(--muted-2);
 }
 
+.search-panel {
+  margin-bottom: 0.85rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.search-panel label {
+  color: var(--foreground);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.search-panel input {
+  width: calc(100% - 1.1rem);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--secondary-background);
+  color: var(--foreground);
+  padding: 0.4rem 0.55rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.search-panel--daily {
+  margin-top: 0.55rem;
+  margin-bottom: 0.2rem;
+}
+
+.search-results {
+  border: 1px solid var(--border-muted);
+  border-radius: 8px;
+  background: var(--secondary-background);
+  padding: 0.4rem 0.5rem;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.search-status {
+  margin: 0;
+  color: var(--muted-2);
+  font-size: 0.8rem;
+}
+
+.search-status--error {
+  color: var(--accent-foreground);
+}
+
+.search-group-list,
+.search-hit-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.search-group-item {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.search-group-title {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.search-hit-button {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.76rem;
+  color: var(--foreground);
+  background: var(--primary-background);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.search-hit-button:hover {
+  filter: saturate(1.2);
+}
+
 .availability-mode-toggle {
   display: flex;
   flex-wrap: wrap;
@@ -464,6 +551,24 @@
   border-radius: 8px;
   padding: 0.65rem 0.75rem;
   background: var(--secondary-background);
+}
+
+.appointment-item--ready {
+  background: var(--calendar-past-bg);
+  border-color: var(--border);
+  opacity: 0.72;
+}
+
+.appointment-item--dimmed {
+  background: var(--calendar-past-bg);
+  border-color: var(--border);
+  opacity: 0.72;
+}
+
+.appointment-item--focused {
+  border-color: var(--primary-foreground);
+  box-shadow: 0 0 0 2px var(--primary-foreground);
+  opacity: 1;
 }
 
 .appointment-header {

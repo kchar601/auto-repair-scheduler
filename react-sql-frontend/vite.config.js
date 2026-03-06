@@ -1,6 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const backendTarget = process.env.VITE_BACKEND_URL || 'https://localhost:443'
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -13,24 +15,29 @@ export default defineConfig({
   server: {
     proxy: {
       '/users': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
+        secure: false,
       },
       '/schedule': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
+        secure: false,
       },
       '/appointments': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
+        secure: false,
       },
       '/appointment-locks': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
+        secure: false,
       },
       '/realtime': {
-        target: 'http://localhost:3001',
+        target: backendTarget,
         changeOrigin: true,
+        secure: false,
       },
     },
   },
